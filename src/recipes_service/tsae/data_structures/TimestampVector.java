@@ -23,10 +23,12 @@ package recipes_service.tsae.data_structures;
 
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import edu.uoc.dpcs.lsim.logger.LoggerManager.Level;
@@ -64,17 +66,17 @@ public class TimestampVector implements Serializable{
 	 * Updates the timestamp vector with a new timestamp. 
 	 * @param timestamp
 	 */
-	public void updateTimestamp(Timestamp timestamp){
+	public synchronized void updateTimestamp(Timestamp timestamp){
 		LSimLogger.log(Level.TRACE, "Updating the TimestampVectorInserting with the timestamp: "+timestamp);
-
-		// ...
+		//Actualizar tiempo
+		timestampVector.put(timestamp.getHostid(),timestamp);
 	}
 	
 	/**
 	 * merge in another vector, taking the elementwise maximum
 	 * @param tsVector (a timestamp vector)
 	 */
-	public void updateMax(TimestampVector tsVector){
+	public void updateMax(TimestampVector tsVector){   
 	}
 	
 	/**
@@ -84,7 +86,6 @@ public class TimestampVector implements Serializable{
 	 * received.
 	 */
 	public Timestamp getLast(String node){
-		
 		// return generated automatically. Remove it when implementing your solution 
 		return null;
 	}
@@ -96,11 +97,13 @@ public class TimestampVector implements Serializable{
 	 *  @param tsVector (timestamp vector)
 	 */
 	public void mergeMin(TimestampVector tsVector){
+
 	}
 	
 	/**
 	 * clone
 	 */
+	
 	public TimestampVector clone(){
 		
 		// return generated automatically. Remove it when implementing your solution 
@@ -110,10 +113,20 @@ public class TimestampVector implements Serializable{
 	/**
 	 * equals
 	 */
+	@Override
 	public boolean equals(Object obj){
+		//revisa si son iguales, si es nulo o si no son de la misma clase
+		if (this == obj) return true;
+		if (obj == null) return false;
+		if (getClass() != obj.getClass()) return false;
 		
-		// return generated automatically. Remove it when implementing your solution 
-		return false;
+		TimestampVector other = (TimestampVector) obj;
+		
+		if (other == null) {
+			if (other.timestampVector != null) return false;
+		} else if (!other.timestampVector.equals(other.timestampVector )) return false;
+		return this.timestampVector.equals(other.timestampVector );
+
 	}
 
 	/**

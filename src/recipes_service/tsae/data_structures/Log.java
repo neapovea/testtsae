@@ -71,23 +71,37 @@ public class Log implements Serializable{
 	 * @param op
 	 * @return true if op is inserted, false otherwise.
 	 */
-	public boolean add(Operation op){
+	public synchronized boolean add(Operation op){
 		// ....
-		
-		// return generated automatically. Remove it when implementing your solution 
-		return false;
+
+		// recupero el ID del host
+		String hostId = op.getTimestamp().getHostid();
+		// recuperar el log del host
+		List<Operation> ops = log.get(hostId);
+		Timestamp last;
+		// log no vacio, recupera ultima marca de tiempo
+		if (!ops.isEmpty())
+			last = ops.get(ops.size()-1).getTimestamp();
+		else last = null;
+
+		// comparar  tiempo actual con la ultima entrada
+		// si son iguales
+		if (op.getTimestamp().compare(last)<0)
+			return false;
+		// sino actualizo log
+		else {
+			log.get(hostId).add(op);
+			return true;
+		}
 	}
+
+	
 	
 	/**
-	 * Checks the received summary (sum) and determines the operations
-	 * contained in the log that have not been seen by
-	 * the proprietary of the summary.
-	 * Returns them in an ordered list.
-	 * @param sum
-	 * @return list of operations
+	 * @param sum The sum of timestamps to compare against.
+	 * @return A list of operations that are newer than the given sum of timestamps.
 	 */
-	public List<Operation> listNewer(TimestampVector sum){
-
+	public  List<Operation> listNewer(TimestampVector sum){	
 		// return generated automatically. Remove it when implementing your solution 
 		return null;
 	}
@@ -107,10 +121,21 @@ public class Log implements Serializable{
 	 */
 	@Override
 	public boolean equals(Object obj) {
+		//revisa si son iguales, si es nulo o si no son de la misma clase
+		if (this == obj) return true;
+		if (obj == null) return false;
+		if (getClass() != obj.getClass()) return false;
+
+		Log other = (Log) obj;
 		
-		// return generated automatically. Remove it when implementing your solution 
-		return false;
+		if (other == null) {
+			if (other.log != null) return false;
+		} else if (!other.log.equals(other.log)) return false;
+
+		return this.log.equals(other.log);
 	}
+
+
 
 	/**
 	 * toString
