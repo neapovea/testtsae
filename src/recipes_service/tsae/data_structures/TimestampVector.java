@@ -125,12 +125,10 @@ public class TimestampVector implements Serializable{
 
 		// Comparar el mapa 'log' de la instancia actual con el de la 'other'
 		if (this.timestampVector  == null) {
-			if (other.timestampVector != null) return false;
-		} else if (!this.timestampVector.equals(other.timestampVector )) {
-			return false;
-		}
-		return true;
+			return other.timestampVector == null;
+		} else return this.timestampVector.equals(other.timestampVector);
 	}
+
 
 	/**
 	 * toString

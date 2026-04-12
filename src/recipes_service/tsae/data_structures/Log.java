@@ -72,21 +72,21 @@ public class Log implements Serializable{
 	 * @return true if op is inserted, false otherwise.
 	 */
 	public synchronized boolean add(Operation op){
-		// ....
-
 		// recupero el ID del host
 		String hostId = op.getTimestamp().getHostid();
 		// recuperar el log del host
-		List<Operation> ops = log.get(hostId);
-		Timestamp last;
+		List<Operation> operations = log.get(hostId);
+
 		// log no vacio, recupera ultima marca de tiempo
-		if (!ops.isEmpty())
-			last = ops.get(ops.size()-1).getTimestamp();
-		else last = null;
+		Timestamp lastTimestamp;
+		if (!operations.isEmpty())
+			lastTimestamp = operations.get(operations.size()-1).getTimestamp();
+		else
+			lastTimestamp = null;
 
 		// comparar  tiempo actual con la ultima entrada
 		// si son iguales
-		if (op.getTimestamp().compare(last)<0)
+		if (op.getTimestamp().compare(lastTimestamp)<0)
 			return false;
 		// sino actualizo log
 		else {
@@ -121,19 +121,20 @@ public class Log implements Serializable{
 	 */
 	@Override
 	public boolean equals(Object obj) {
-		//revisa si son iguales, si es nulo o si no son de la misma clase
+		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
 		if (obj == null) return false;
 		if (getClass() != obj.getClass()) return false;
 
+		//  Casting seguro a la clase Log
 		Log other = (Log) obj;
-		
-		if (other == null) {
-			if (other.log != null) return false;
-		} else if (!other.log.equals(other.log)) return false;
 
-		return this.log.equals(other.log);
+		// Comparar el mapa 'log' de la instancia actual con el de la 'other'
+		if (this.log == null) {
+			return other.log == null;
+		} else return this.log.equals(other.log);
 	}
+
 
 
 
