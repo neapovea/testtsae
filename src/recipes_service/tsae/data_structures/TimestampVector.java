@@ -123,12 +123,11 @@ public class TimestampVector implements Serializable{
 		//  Casting seguro a la clase Log
 		TimestampVector other = (TimestampVector) obj;
 
-		// Comparar el mapa 'log' de la instancia actual con el de la 'other'
+		// Comparar el mapa log de la instancia actual con el de la other
 		if (this.timestampVector  == null) {
-			return other.timestampVector == null;
+            return other.timestampVector == null;
 		} else return this.timestampVector.equals(other.timestampVector);
-	}
-
+    }
 
 	/**
 	 * toString

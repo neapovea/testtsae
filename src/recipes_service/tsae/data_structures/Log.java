@@ -72,23 +72,23 @@ public class Log implements Serializable{
 	 * @return true if op is inserted, false otherwise.
 	 */
 	public synchronized boolean add(Operation op){
-		// recupero el ID del host
+		// Recuperar el ID del host
 		String hostId = op.getTimestamp().getHostid();
-		// recuperar el log del host
+		// Recuperar el log del host
 		List<Operation> operations = log.get(hostId);
 
-		// log no vacio, recupera ultima marca de tiempo
+		// Log no vacío, recupera última marca de tiempo
 		Timestamp lastTimestamp;
 		if (!operations.isEmpty())
 			lastTimestamp = operations.get(operations.size()-1).getTimestamp();
 		else
 			lastTimestamp = null;
 
-		// comparar  tiempo actual con la ultima entrada
+		// Comparar tiempo actual con la última entrada
 		// si son iguales
 		if (op.getTimestamp().compare(lastTimestamp)<0)
 			return false;
-		// sino actualizo log
+		// Sino actualizo log
 		else {
 			log.get(hostId).add(op);
 			return true;
@@ -129,11 +129,11 @@ public class Log implements Serializable{
 		//  Casting seguro a la clase Log
 		Log other = (Log) obj;
 
-		// Comparar el mapa 'log' de la instancia actual con el de la 'other'
+		// Comparar el mapa log de la instancia actual con el de la other
 		if (this.log == null) {
-			return other.log == null;
+            return other.log == null;
 		} else return this.log.equals(other.log);
-	}
+    }
 
 
 
