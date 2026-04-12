@@ -115,18 +115,21 @@ public class TimestampVector implements Serializable{
 	 */
 	@Override
 	public boolean equals(Object obj){
-		//revisa si son iguales, si es nulo o si no son de la misma clase
+		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
 		if (obj == null) return false;
 		if (getClass() != obj.getClass()) return false;
-		
-		TimestampVector other = (TimestampVector) obj;
-		
-		if (other == null) {
-			if (other.timestampVector != null) return false;
-		} else if (!other.timestampVector.equals(other.timestampVector )) return false;
-		return this.timestampVector.equals(other.timestampVector );
 
+		//  Casting seguro a la clase Log
+		TimestampVector other = (TimestampVector) obj;
+
+		// Comparar el mapa 'log' de la instancia actual con el de la 'other'
+		if (this.timestampVector  == null) {
+			if (other.timestampVector != null) return false;
+		} else if (!this.timestampVector.equals(other.timestampVector )) {
+			return false;
+		}
+		return true;
 	}
 
 	/**
