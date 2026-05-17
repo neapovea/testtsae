@@ -24,6 +24,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Timer;
 import java.util.Vector;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import edu.uoc.dpcs.lsim.logger.LoggerManager.Level;
 import lsim.library.api.LSimLogger;
@@ -52,7 +56,8 @@ public class ServerData {
 	private String id;
 	
 	// sequence number of the last recipe timestamped by this server
-	private long seqnum=Timestamp.NULL_TIMESTAMP_SEQ_NUMBER; // sequence number (to timestamp)
+	private AtomicLong seqnum = new AtomicLong(Timestamp.NULL_TIMESTAMP_SEQ_NUMBER);
+
 
 	// timestamp lock
 	private Object timestampLock = new Object();
@@ -85,8 +90,11 @@ public class ServerData {
 
 	// TODO: esborrar aquesta estructura de dades
 	// tombstones: timestamp of removed operations
-	List<Timestamp> tombstones = new Vector<Timestamp>();
-	
+	//List<Timestamp> tombstones = new Vector<Timestamp>();
+	private final List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
+
+	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+
 	// end: true when program should end; false otherwise
 	private boolean end;
 
@@ -111,7 +119,9 @@ public class ServerData {
 	}
 
 	public void stopTSAEsessions(){
-		this.tsaeSessionTimer.cancel();
+		if (tsaeSessionTimer != null) {
+			tsaeSessionTimer.cancel();
+		}
 	}
 	
 	public boolean end(){
@@ -127,50 +137,84 @@ public class ServerData {
 	// ******************************
 	private Timestamp nextTimestamp(){
 		Timestamp nextTimestamp = null;
-		synchronized (timestampLock){
-			if (seqnum == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER){
-				seqnum = -1;
+
+		// Adquirir el candado de escritura para asegurar exclusividad total
+		lock.writeLock().lock();
+		try {
+			// Lógica de inicialización/reinicio de la secuencia
+			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+				seqnum.set(-1);
 			}
-			nextTimestamp = new Timestamp(id, ++seqnum);
+
+			// Generar el nuevo timestamp con el ID del host y el incremento atómico
+			nextTimestamp = new Timestamp(id, seqnum.incrementAndGet());
+
+		} finally {
+			// Liberar siempre el candado en el bloque finally
+			lock.writeLock().unlock();
 		}
+
 		return nextTimestamp;
 	}
 
 	// ******************************
 	// *** add and remove recipes
 	// ******************************
-	public synchronized void addRecipe(String recipeTitle, String recipe) {
+	public void addRecipe(String recipeTitle, String recipe) {
+		// Validación de entrada (fuera del bloqueo para mayor eficiencia)
+		if (recipeTitle == null || recipe == null) {
+			LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
+			return;
+		}
 
-		Timestamp timestamp= nextTimestamp();
-		Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
-		Operation op=new AddOperation(rcpe, timestamp);
+		// Adquisición del candado de escritura
+		// Garantiza que ninguna sesión de anti-entropía lea datos inconsistentes mientras se añade la receta
+		lock.writeLock().lock();
+		try {
+			// Generación de metadatos del protocolo TSAE
+			// El próximo timestamp válido se obtiene mediante nextTimestamp()
+			Timestamp timestamp = nextTimestamp();
 
-		this.log.add(op);
-		this.summary.updateTimestamp(timestamp);
-		this.recipes.add(rcpe);
-//		LSimLogger.log(Level.TRACE,"The recipe '"+recipeTitle+"' has been added");
+			// Creación de la receta y la operación de suma
+			Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
+			Operation op = new AddOperation(rcpe, timestamp);
 
+			// Actualización atómica de las estructuras de datos del servidor [1]
+			log.add(op);                        // Añadir al log de mensajes para propagación
+			summary.updateTimestamp(timestamp); // Actualizar el conocimiento local del host
+			recipes.add(rcpe);                 // Actualizar el estado de la aplicación local
+
+			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
+
+		} finally {
+			// Liberación garantizada del candado en el bloque finally
+			lock.writeLock().unlock();
+		}
 	}
 	
 	public synchronized void removeRecipe(String recipeTitle){
 		System.err.println("Error: removeRecipe method (recipesService.serverData) not yet implemented");
 	}
-	
-	private synchronized void purgeTombstones(){
-		if (ack == null){
-			return;
+
+	private void purgeTombstones() {
+		// Validar nulidad
+		if (ack == null) return;
+
+		lock.writeLock().lock();
+		try {
+			// Obtener el vector que representa el progreso mínimo confirmado por todos
+			var globalProgressCut = ack.minTimestampVector();
+
+			// Eliminar tombstones que ya han sido observadas por todos los miembros
+			tombstones.removeIf(ts -> ts.compare(globalProgressCut.getLast(ts.getHostid())) <= 0);
+
+		} finally {
+			// 4. Liberación garantizada del candado
+			lock.writeLock().unlock();
 		}
-		TimestampVector sum = ack.minTimestampVector();
-		
-		List<Timestamp> newTombstones = new Vector<Timestamp>();
-		for(int i=0; i<tombstones.size(); i++){
-			if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
-				newTombstones.add(tombstones.get(i));
-			}
-		}
-		tombstones = newTombstones;
 	}
-	
+
+
 	// ****************************************************************************
 	// *** operations to get the TSAE data structures. Used to send to evaluation
 	// ****************************************************************************
@@ -251,5 +295,36 @@ public class ServerData {
 	 */ 
 	public synchronized void notifyServerConnected(){
 		notifyAll();
+	}
+
+
+	public void execOperation(Operation op) {
+		// Adquirir candado de escritura para proteger la modificación de datos
+		lock.writeLock().lock();
+		try {
+			// Procesar operación de adición usando Pattern Matching
+			if (op instanceof AddOperation addOp) {
+				Recipe recipeData = addOp.getRecipe();
+
+				// Crear una nueva instancia de la receta para asegurar la integridad local
+				Recipe newRecipe = new Recipe(
+						recipeData.getTitle(),
+						recipeData.getRecipe(),
+						recipeData.getAuthor(),
+						recipeData.getTimestamp()
+				);
+
+				recipes.add(newRecipe);
+				log.add(op); // Registrar en el log para futura propagación
+
+			}
+			// Procesar operación de eliminación
+			else if (op instanceof RemoveOperation removeOp) {
+				recipes.remove(removeOp.getRecipeTitle());
+			}
+		} finally {
+			// Asegurar la liberación del candado siempre
+			lock.writeLock().unlock();
+		}
 	}
 }

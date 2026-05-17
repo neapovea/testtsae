@@ -21,12 +21,12 @@
 package recipes_service.tsae.data_structures;
 
 import java.io.Serializable;
-import java.util.Enumeration;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Vector;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 
 import recipes_service.data.Operation;
 //LSim logging system imports sgeag@2017
@@ -53,12 +53,14 @@ public class Log implements Serializable{
 	 * that stores a list of operations for each member of 
 	 * the group.
 	 */
-	private ConcurrentHashMap<String, List<Operation>> log= new ConcurrentHashMap<String, List<Operation>>();  
+	private final ConcurrentHashMap<String, CopyOnWriteArrayList<Operation>> log = new ConcurrentHashMap<>();
+	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+
 
 	public Log(List<String> participants){
 		// create an empty log
-		for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
-			log.put(it.next(), new Vector<Operation>());
+		for (String participant : participants) {
+			log.put(participant, new CopyOnWriteArrayList<>());
 		}
 	}
 
@@ -72,27 +74,35 @@ public class Log implements Serializable{
 	 * @return true if op is inserted, false otherwise.
 	 */
 	public synchronized boolean add(Operation op){
-		// Recuperar el ID del host
-		String hostId = op.getTimestamp().getHostid();
-		// Recuperar el log del host
-		List<Operation> operations = log.get(hostId);
+		// Adquirimos el candado de escritura
+		lock.writeLock().lock();
+		try {
+			// Recuperar el ID del host
+			String hostId = op.getTimestamp().getHostid();
 
-		// Log no vacío, recupera última marca de tiempo
-		Timestamp lastTimestamp;
-		if (!operations.isEmpty())
-			lastTimestamp = operations.get(operations.size()-1).getTimestamp();
-		else
-			lastTimestamp = null;
+			// Obtener o inicializar la lista de operaciones para este host
+			List<Operation> operations = log.computeIfAbsent(hostId, key -> new CopyOnWriteArrayList<>());
 
-		// Comparar tiempo actual con la última entrada
-		// si son iguales
-		if (op.getTimestamp().compare(lastTimestamp)<0)
+			// Si es la primera operación del host, se añade directamente
+			if (operations.isEmpty()) {
+				return operations.add(op);
+			}
+
+			// Extraer el último timestamp para una comparación más clara
+			Timestamp lastTimestamp = operations.get(operations.size() - 1).getTimestamp();
+			Timestamp newTimestamp = op.getTimestamp();
+
+			// Solo se añade si el nuevo timestamp es estrictamente mayor
+			if (lastTimestamp.compare(newTimestamp) < 0) {
+				operations.add(op);
+				return true;
+			}
 			return false;
-		// Sino actualizo log
-		else {
-			log.get(hostId).add(op);
-			return true;
+		} finally {
+			// Siempre liberar en el bloque finally
+			lock.writeLock().unlock();
 		}
+
 	}
 
 	
@@ -101,9 +111,31 @@ public class Log implements Serializable{
 	 * @param sum The sum of timestamps to compare against.
 	 * @return A list of operations that are newer than the given sum of timestamps.
 	 */
-	public  List<Operation> listNewer(TimestampVector sum){	
-		// return generated automatically. Remove it when implementing your solution 
-		return null;
+	public List<Operation> listNewer(TimestampVector partnerSummary) {
+		List<Operation> newOperations = new ArrayList<>();
+
+		lock.readLock().lock();
+		try {
+			// Iterar sobre las entradas del log (operaciones por host)
+			for (var entry : log.entrySet()) {
+				String hostId = entry.getKey();
+				List<Operation> hostOperations = entry.getValue();
+
+				// Obtener el punto de corte del compañero para este host específico
+				Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
+
+				// Filtrar y añadir solo las operaciones que el compañero no ha visto
+				for (Operation op : hostOperations) {
+					if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
+						newOperations.add(op);
+					}
+				}
+			}
+		} finally {
+			lock.readLock().unlock();
+		}
+
+		return newOperations;
 	}
 	
 	/**
@@ -114,6 +146,30 @@ public class Log implements Serializable{
 	 * @param ack: ackSummary.
 	 */
 	public void purgeLog(TimestampMatrix ack){
+		lock.writeLock().lock();
+		try {
+			// Iteramos sobre cada lista de operaciones agrupadas por el emisor (hostId)
+			for (var entry : log.entrySet()) {
+				String senderId = entry.getKey();
+				List<Operation> operations = entry.getValue();
+
+				// Obtenemos la fila de la matriz ACK que registra el progreso de todos para este emisor
+				TimestampVector ackRow = ack.getTimestampVector(senderId);
+
+				// Eliminamos de la lista local los mensajes confirmados globalmente
+				operations.removeIf(op -> {
+					// Según TSAE (relojes no sincr.), un mensaje es purgable si su tiempo 't'
+					// es <= que todas las entradas en la fila del emisor en la matriz ACK.
+					Timestamp msgTs = op.getTimestamp();
+					Timestamp minGlobalProgress = ackRow.getLast(msgTs.getHostid());
+
+					return msgTs.compare(minGlobalProgress) <= 0;
+				});
+			}
+		} finally {
+			lock.writeLock().unlock();
+		}
+
 	}
 
 	/**
@@ -123,18 +179,18 @@ public class Log implements Serializable{
 	public boolean equals(Object obj) {
 		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
-		if (obj == null) return false;
-		if (getClass() != obj.getClass()) return false;
+		if (obj == null || getClass() != obj.getClass()) return false;
 
-		//  Casting seguro a la clase Log
+		// Casting y sección crítica protegida
 		Log other = (Log) obj;
-
-		// Comparar el mapa log de la instancia actual con el de la other
-		if (this.log == null) {
-            return other.log == null;
-		} else return this.log.equals(other.log);
-    }
-
+		lock.readLock().lock();
+		try {
+			// Comparamos el contenido del mapa interno (ConcurrentHashMap)
+			return this.log.equals(other.log);
+		} finally {
+			lock.readLock().unlock();
+		}
+	}
 
 
 
@@ -142,16 +198,33 @@ public class Log implements Serializable{
 	 * toString
 	 */
 	@Override
-	public synchronized String toString() {
-		String name="";
-		for(Enumeration<List<Operation>> en=log.elements();
-		en.hasMoreElements(); ){
-		List<Operation> sublog=en.nextElement();
-		for(ListIterator<Operation> en2=sublog.listIterator(); en2.hasNext();){
-			name+=en2.next().toString()+"\n";
+	public String toString() {
+		lock.readLock().lock();
+		try {
+			// Usamos Streams para aplanar el mapa y unir las operaciones con saltos de línea
+			return log.values().stream()
+					.flatMap(List::stream)
+					.map(Operation::toString)
+					.collect(Collectors.joining("\n", "", "\n"));
+		} finally {
+			lock.readLock().unlock();
 		}
+//
+//		lock.readLock().lock();
+//		try {
+//			StringBuilder sb = new StringBuilder();
+//			for (CopyOnWriteArrayList<Operation> sublog : log.values()) {
+//				for (Operation op : sublog) {
+//					sb.append(op.toString()).append("\n");
+//				}
+//			}
+//			return sb.toString();
+//		} finally {
+//			lock.readLock().unlock();
+//		}
+//	}
+
 	}
-		
-		return name;
-	}
+
+
 }
