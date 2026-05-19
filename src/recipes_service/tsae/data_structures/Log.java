@@ -73,7 +73,7 @@ public class Log implements Serializable{
 	 * @param op
 	 * @return true if op is inserted, false otherwise.
 	 */
-	public synchronized boolean add(Operation op){
+	public boolean add(Operation op){
 		// Adquirimos el candado de escritura
 		lock.writeLock().lock();
 		try {
@@ -85,7 +85,8 @@ public class Log implements Serializable{
 
 			// Si es la primera operación del host, se añade directamente
 			if (operationsList.isEmpty()) {
-				return operationsList.add(op);
+				operationsList.add(op);
+				return true;
 			}
 
 			// Extraer el último timestamp para una comparación más clara
@@ -162,8 +163,8 @@ public class Log implements Serializable{
 				TimestampVector ackRow = ack.getTimestampVector(senderId);
 
 				// Eliminamos de la lista local los mensajes confirmados globalmente
-                opeList.removeIf(
-                        op -> op.getTimestamp().compare(ackVector.getLast(op.getTimestamp().getHostid())) <= 0);
+                operations.removeIf(
+                        op -> op.getTimestamp().compare(ackRow.getLast(op.getTimestamp().getHostid())) <= 0);
 
 /////				operations.removeIf(op -> {
 /////					// Según TSAE (relojes no sincr.), un mensaje es purgable si su tiempo 't'
