@@ -20,10 +20,8 @@
 
 package recipes_service;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Timer;
-import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -36,7 +34,6 @@ import recipes_service.communication.Host;
 import recipes_service.communication.Hosts;
 import recipes_service.data.AddOperation;
 import recipes_service.data.Operation;
-import recipes_service.data.OperationType;
 import recipes_service.data.Recipe;
 import recipes_service.data.Recipes;
 import recipes_service.data.RemoveOperation;
@@ -296,7 +293,7 @@ public class ServerData {
 	}
 
 
-    public void execOperation(Operation op) {
+    public void registerOperation(Operation op) {
         // Adquirir candado de escritura para proteger la modificación de datos
         lock.writeLock().lock();
         try {
