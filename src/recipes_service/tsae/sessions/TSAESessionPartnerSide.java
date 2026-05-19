@@ -100,19 +100,20 @@ public class TSAESessionPartnerSide extends Thread{
 				// listNewer usa internamente un readLock para recorrer el log de forma segura
 				List<Operation> missingOps = serverData.getLog().listNewer(originator.getSummary());
 				for (Operation op : missingOps) {
-					var opMsg = new MessageOperation(op);
+					Message opMsg = new MessageOperation(op);
 					opMsg.setSessionNumber(current_session_number);
 					out.writeObject(opMsg);
 				}
 
 				// Enviar nuestro snapshot (Vectores de Resumen y Confirmación)
-				var responseMsg = new MessageAErequest(localSummary, localAck);
+				Message responseMsg = new MessageAErequest(localSummary, localAck);
 				responseMsg.setSessionNumber(current_session_number);
 				out.writeObject(responseMsg);
 
 				// Recibir operaciones enviadas por el Originador
 				List<Operation> incomingOps = new ArrayList<>();
 				Message messageRecib = (Message) in.readObject();
+
 				while (messageRecib instanceof MessageOperation opMsg) {
 					incomingOps.add(opMsg.getOperation());
 					messageRecib = (Message) in.readObject();
@@ -121,7 +122,7 @@ public class TSAESessionPartnerSide extends Thread{
 				// Actualización de base de datos y metadatos, si recibimos el fin de sesión correctamente, aplicamos los cambios
 				if (messageRecib instanceof MessageEndTSAE) {
 					// Enviamos confirmación de cierre
-					var endMsg = new MessageEndTSAE();
+					Message endMsg = new MessageEndTSAE();
 					endMsg.setSessionNumber(current_session_number);
 					out.writeObject(endMsg);
 

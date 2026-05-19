@@ -95,6 +95,8 @@ public class TSAESessionOriginatorSide extends TimerTask{
 		
 		LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] TSAE session");
 		Socket socket = null;
+
+		lock.writeLock().lock();
 		try {
 			socket = new Socket(n.getAddress(), n.getPort());
 			ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
@@ -159,11 +161,13 @@ public class TSAESessionOriginatorSide extends TimerTask{
 		} catch (IOException e) {
 			LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] IOException: " + e.getMessage());
 		} finally {
+
 			try {
 				socket.close();
 			} catch (IOException e) {
 				LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] Error closing socket: " + e.getMessage());
 			}
+			lock.writeLock().unlock();
 			//LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] End TSAE session");
 		}
 	}

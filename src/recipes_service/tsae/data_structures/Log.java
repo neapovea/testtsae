@@ -81,20 +81,20 @@ public class Log implements Serializable{
 			String hostId = op.getTimestamp().getHostid();
 
 			// Obtener o inicializar la lista de operaciones para este host
-			List<Operation> operations = log.computeIfAbsent(hostId, key -> new CopyOnWriteArrayList<>());
+			CopyOnWriteArrayList<Operation> operationsList = log.computeIfAbsent(hostId, key -> new CopyOnWriteArrayList<>());
 
 			// Si es la primera operación del host, se añade directamente
-			if (operations.isEmpty()) {
-				return operations.add(op);
+			if (operationsList.isEmpty()) {
+				return operationsList.add(op);
 			}
 
 			// Extraer el último timestamp para una comparación más clara
-			Timestamp lastTimestamp = operations.get(operations.size() - 1).getTimestamp();
+			Timestamp lastTimestamp = operationsList.get(operationsList.size() - 1).getTimestamp();
 			Timestamp newTimestamp = op.getTimestamp();
 
 			// Solo se añade si el nuevo timestamp es estrictamente mayor
 			if (lastTimestamp.compare(newTimestamp) < 0) {
-				operations.add(op);
+				operationsList.add(op);
 				return true;
 			}
 			return false;
@@ -117,15 +117,20 @@ public class Log implements Serializable{
 		lock.readLock().lock();
 		try {
 			// Iterar sobre las entradas del log (operaciones por host)
-			for (var entry : log.entrySet()) {
+			for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
+			//for (var entry : log.entrySet()) {
 				String hostId = entry.getKey();
-				List<Operation> hostOperations = entry.getValue();
+				CopyOnWriteArrayList<Operation> hostOperationsList = entry.getValue();
+
+                // Skip empty operation lists
+                if (hostOperationsList.isEmpty())
+                    continue;
 
 				// Obtener el punto de corte del compañero para este host específico
 				Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
 
 				// Filtrar y añadir solo las operaciones que el compañero no ha visto
-				for (Operation op : hostOperations) {
+				for (Operation op : hostOperationsList) {
 					if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
 						newOperations.add(op);
 					}
@@ -149,22 +154,25 @@ public class Log implements Serializable{
 		lock.writeLock().lock();
 		try {
 			// Iteramos sobre cada lista de operaciones agrupadas por el emisor (hostId)
-			for (var entry : log.entrySet()) {
+			for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
 				String senderId = entry.getKey();
-				List<Operation> operations = entry.getValue();
+				CopyOnWriteArrayList<Operation> operations = entry.getValue();
 
 				// Obtenemos la fila de la matriz ACK que registra el progreso de todos para este emisor
 				TimestampVector ackRow = ack.getTimestampVector(senderId);
 
 				// Eliminamos de la lista local los mensajes confirmados globalmente
-				operations.removeIf(op -> {
-					// Según TSAE (relojes no sincr.), un mensaje es purgable si su tiempo 't'
-					// es <= que todas las entradas en la fila del emisor en la matriz ACK.
-					Timestamp msgTs = op.getTimestamp();
-					Timestamp minGlobalProgress = ackRow.getLast(msgTs.getHostid());
+                opeList.removeIf(
+                        op -> op.getTimestamp().compare(ackVector.getLast(op.getTimestamp().getHostid())) <= 0);
 
-					return msgTs.compare(minGlobalProgress) <= 0;
-				});
+/////				operations.removeIf(op -> {
+/////					// Según TSAE (relojes no sincr.), un mensaje es purgable si su tiempo 't'
+/////					// es <= que todas las entradas en la fila del emisor en la matriz ACK.
+/////					Timestamp msgTs = op.getTimestamp();
+/////					Timestamp minGlobalProgress = ackRow.getLast(msgTs.getHostid());
+/////
+/////					return msgTs.compare(minGlobalProgress) <= 0;
+/////				});
 			}
 		} finally {
 			lock.writeLock().unlock();

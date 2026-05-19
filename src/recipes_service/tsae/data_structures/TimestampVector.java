@@ -96,9 +96,11 @@ public class TimestampVector implements Serializable{
 				timestampVector.put(hostId, newTimestamp);
 
 				LSimLogger.log(Level.TRACE, "Updated Summary Vector for " + hostId + " to " + newTimestamp);
+				return newTimestamp;
 			} else {
 				LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
 						+ ". Known: " + currentTimestamp + ", Received: " + newTimestamp);
+				return currentTimestamp;
 			}
 		} finally {
 			// Libera bloqueo
@@ -110,15 +112,15 @@ public class TimestampVector implements Serializable{
 	 * merge in another vector, taking the elementwise maximum
 	 * @param tsVector (a timestamp vector)
 	 */
-	public void updateMax(TimestampVector other) {
+	public void updateMax(TimestampVector tsVector) {
 		// Validación de nulidad
-		if (other == null) return;
+		if (tsVector == null) return;
 
 		// Adquisición del candado de escritura
 		lock.writeLock().lock();
 		try {
 			// Fusión de vectores usando el máximo elemento a elemento
-			other.timestampVector.forEach((hostId, incomingTS) -> {
+			tsVector.timestampVector.forEach((hostId, incomingTS) -> {
 				if (incomingTS != null) {
 					timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
 							(incoming.compare(localTS) > 0) ? incoming : localTS
