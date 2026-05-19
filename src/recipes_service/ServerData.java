@@ -188,25 +188,11 @@ public class ServerData {
 	}
 	
 	public synchronized void removeRecipe(String recipeTitle){
-		System.err.println("Error: removeRecipe method (recipesService.serverData) not yet implemented");
+		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
 	}
 
 	private void purgeTombstones() {
-		// Validar nulidad
-		if (ack == null) return;
-
-		lock.writeLock().lock();
-		try {
-			// Obtener el vector que representa el progreso mínimo confirmado por todos
-			var globalProgressCut = ack.minTimestampVector();
-
-			// Eliminar tombstones que ya han sido observadas por todos los miembros
-			tombstones.removeIf(ts -> ts.compare(globalProgressCut.getLast(ts.getHostid())) <= 0);
-
-		} finally {
-			// Liberación bloqueo
-			lock.writeLock().unlock();
-		}
+		System.err.println("Error: purgeTombstones method (serverData) not yet implemented");
 	}
 
 

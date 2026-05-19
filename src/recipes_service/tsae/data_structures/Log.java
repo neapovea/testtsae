@@ -152,33 +152,7 @@ public class Log implements Serializable{
 	 * @param ack: ackSummary.
 	 */
 	public void purgeLog(TimestampMatrix ack){
-		lock.writeLock().lock();
-		try {
-			// Iteramos sobre cada lista de operaciones agrupadas por el emisor (hostId)
-			for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
-				String senderId = entry.getKey();
-				CopyOnWriteArrayList<Operation> operations = entry.getValue();
-
-				// Obtenemos la fila de la matriz ACK que registra el progreso de todos para este emisor
-				TimestampVector ackRow = ack.getTimestampVector(senderId);
-
-				// Eliminamos de la lista local los mensajes confirmados globalmente
-                operations.removeIf(
-                        op -> op.getTimestamp().compare(ackRow.getLast(op.getTimestamp().getHostid())) <= 0);
-
-/////				operations.removeIf(op -> {
-/////					// Según TSAE (relojes no sincr.), un mensaje es purgable si su tiempo 't'
-/////					// es <= que todas las entradas en la fila del emisor en la matriz ACK.
-/////					Timestamp msgTs = op.getTimestamp();
-/////					Timestamp minGlobalProgress = ackRow.getLast(msgTs.getHostid());
-/////
-/////					return msgTs.compare(minGlobalProgress) <= 0;
-/////				});
-			}
-		} finally {
-			lock.writeLock().unlock();
-		}
-
+		System.err.println("Error: purgeLog method (Log) not yet implemented");
 	}
 
 	/**
