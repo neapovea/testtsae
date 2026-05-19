@@ -96,11 +96,13 @@ public class TimestampVector implements Serializable{
 				timestampVector.put(hostId, newTimestamp);
 
 				LSimLogger.log(Level.TRACE, "Updated Summary Vector for " + hostId + " to " + newTimestamp);
-				return newTimestamp;
+				//return newTimestamp;
+
 			} else {
 				LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
 						+ ". Known: " + currentTimestamp + ", Received: " + newTimestamp);
-				return currentTimestamp;
+				//return currentTimestamp;
+
 			}
 		} finally {
 			// Libera bloqueo
