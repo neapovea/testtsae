@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.TimerTask;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 
 import recipes_service.ServerData;
 import recipes_service.activity_simulation.SimulationData;
@@ -55,6 +58,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 	private ServerData serverData;
 
 	private final Object sessionLock = new Object();
+	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TSAESessionOriginatorSide(ServerData serverData){
 		super();
