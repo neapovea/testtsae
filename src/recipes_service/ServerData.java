@@ -60,7 +60,7 @@ public class ServerData {
 
 
 	// timestamp lock
-	private Object timestampLock = new Object();
+	//private Object timestampLock = new Object();
 	
 	// TSAE data structures
 	private Log log = null;
@@ -84,7 +84,6 @@ public class ServerData {
 	private long sessionPeriod = 10;
 
 	private Timer tsaeSessionTimer;
-
 	//
 	TSAESessionOriginatorSide tsae = null;
 
@@ -140,12 +139,11 @@ public class ServerData {
 
 		// Adquirir el candado de escritura para asegurar exclusividad total
 		lock.writeLock().lock();
-		try {
+		try {		
 			// Lógica de inicialización/reinicio de la secuencia
-			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
-				seqnum.set(-1);
-			}
-
+////			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+////				seqnum.set(-1);
+////			}
 			// Generar el nuevo timestamp con el ID del host y el incremento atómico
 			nextTimestamp = new Timestamp(id, seqnum.incrementAndGet());
 
@@ -300,31 +298,25 @@ public class ServerData {
 
 	public void execOperation(Operation op) {
 		// Adquirir candado de escritura para proteger la modificación de datos
-		lock.writeLock().lock();
-		try {
-			// Procesar operación de adición usando Pattern Matching
-			if (op instanceof AddOperation addOp) {
-				Recipe recipeData = addOp.getRecipe();
 
-				// Crear una nueva instancia de la receta para asegurar la integridad local
-				Recipe newRecipe = new Recipe(
-						recipeData.getTitle(),
-						recipeData.getRecipe(),
-						recipeData.getAuthor(),
-						recipeData.getTimestamp()
-				);
+		// Procesar operación de adición usando Pattern Matching
+		if (op instanceof AddOperation addOp) {
+			Recipe recipeData = addOp.getRecipe();
 
-				recipes.add(newRecipe);
-				log.add(op); // Registrar en el log para futura propagación
+			// Crear una nueva instancia de la receta para asegurar la integridad local
+			Recipe newRecipe = new Recipe(
+					recipeData.getTitle(),
+					recipeData.getRecipe(),
+					recipeData.getAuthor(),
+					recipeData.getTimestamp()
+			);
+			recipes.add(newRecipe);
+			log.add(op); // Registrar en el log para futura propagación
 
-			}
-			// Procesar operación de eliminación
-			else if (op instanceof RemoveOperation removeOp) {
-				recipes.remove(removeOp.getRecipeTitle());
-			}
-		} finally {
-			// Asegurar la liberación del candado siempre
-			lock.writeLock().unlock();
+		}
+		// Procesar operación de eliminación
+		else if (op instanceof RemoveOperation removeOp) {
+			recipes.remove(removeOp.getRecipeTitle());
 		}
 	}
 }
