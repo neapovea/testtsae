@@ -22,10 +22,8 @@ package recipes_service.tsae.sessions;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.util.Iterator;
 import java.util.List;
 import java.util.TimerTask;
-import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -38,11 +36,7 @@ import recipes_service.communication.Message;
 import recipes_service.communication.MessageAErequest;
 import recipes_service.communication.MessageEndTSAE;
 import recipes_service.communication.MessageOperation;
-import recipes_service.communication.MsgType;
-import recipes_service.data.AddOperation;
 import recipes_service.data.Operation;
-import recipes_service.data.Recipe;
-import recipes_service.data.RemoveOperation;
 import recipes_service.tsae.data_structures.TimestampMatrix;
 import recipes_service.tsae.data_structures.TimestampVector;
 import communication.ObjectInputStream_DS;
@@ -126,19 +120,12 @@ public class TSAESessionOriginatorSide extends TimerTask{
 
 				// Actualización segura de las estructuras locales (usan sus propios candados internos)
 				serverData.getLog().add(operation);
-			//	if (operation instanceof AddOperation addOp) {
-			//		Recipe recipeData = addOp.getRecipe();
-					//serverData.addRecipe(recipeData.getTitle(), recipeData.getRecipe());
-				//}		else if (operation instanceof RemoveOperation removeOp) {
-				//	serverData.removeRecipe(removeOp.getRecipeTitle());
-//				}
-				serverData.execOperation(operation);
+				serverData.registerOperation(operation);
 				serverData.getSummary().updateTimestamp(operation.getTimestamp());
 				serverData.getAck().update(serverData.getId(), serverData.getSummary());
 
 				msg = (Message) in.readObject();
 			}
-
 
 			// Fase de Envío: Responder a la solicitud del compañero
 			if (msg instanceof MessageAErequest partnerReq) {
