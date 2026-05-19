@@ -39,7 +39,9 @@ import recipes_service.communication.MessageAErequest;
 import recipes_service.communication.MessageEndTSAE;
 import recipes_service.communication.MessageOperation;
 import recipes_service.communication.MsgType;
+import recipes_service.data.AddOperation;
 import recipes_service.data.Operation;
+import recipes_service.data.Recipe;
 import recipes_service.tsae.data_structures.TimestampMatrix;
 import recipes_service.tsae.data_structures.TimestampVector;
 
@@ -130,6 +132,12 @@ public class TSAESessionPartnerSide extends Thread{
 					try {
 						// Ejecutar operaciones y actualizar el conocimiento máximo (updateMax)
 						for (Operation op : incomingOps) {
+//							if (op instanceof AddOperation addOp) {
+//								Recipe recipeData = addOp.getRecipe();
+//								serverData.addRecipe(recipeData.getTitle(), recipeData.getRecipe());
+//								//}		else if (operation instanceof RemoveOperation removeOp) {
+//								//	serverData.removeRecipe(removeOp.getRecipeTitle());
+//							}
 							serverData.execOperation(op);
 						}
 						serverData.getSummary().updateMax(originator.getSummary());

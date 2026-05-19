@@ -218,21 +218,6 @@ public class Log implements Serializable{
 		} finally {
 			lock.readLock().unlock();
 		}
-//
-//		lock.readLock().lock();
-//		try {
-//			StringBuilder sb = new StringBuilder();
-//			for (CopyOnWriteArrayList<Operation> sublog : log.values()) {
-//				for (Operation op : sublog) {
-//					sb.append(op.toString()).append("\n");
-//				}
-//			}
-//			return sb.toString();
-//		} finally {
-//			lock.readLock().unlock();
-//		}
-//	}
-
 	}
 
 

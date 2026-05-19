@@ -39,7 +39,10 @@ import recipes_service.communication.MessageAErequest;
 import recipes_service.communication.MessageEndTSAE;
 import recipes_service.communication.MessageOperation;
 import recipes_service.communication.MsgType;
+import recipes_service.data.AddOperation;
 import recipes_service.data.Operation;
+import recipes_service.data.Recipe;
+import recipes_service.data.RemoveOperation;
 import recipes_service.tsae.data_structures.TimestampMatrix;
 import recipes_service.tsae.data_structures.TimestampVector;
 import communication.ObjectInputStream_DS;
@@ -123,12 +126,19 @@ public class TSAESessionOriginatorSide extends TimerTask{
 
 				// Actualización segura de las estructuras locales (usan sus propios candados internos)
 				serverData.getLog().add(operation);
+			//	if (operation instanceof AddOperation addOp) {
+			//		Recipe recipeData = addOp.getRecipe();
+					//serverData.addRecipe(recipeData.getTitle(), recipeData.getRecipe());
+				//}		else if (operation instanceof RemoveOperation removeOp) {
+				//	serverData.removeRecipe(removeOp.getRecipeTitle());
+//				}
 				serverData.execOperation(operation);
 				serverData.getSummary().updateTimestamp(operation.getTimestamp());
 				serverData.getAck().update(serverData.getId(), serverData.getSummary());
 
 				msg = (Message) in.readObject();
 			}
+
 
 			// Fase de Envío: Responder a la solicitud del compañero
 			if (msg instanceof MessageAErequest partnerReq) {

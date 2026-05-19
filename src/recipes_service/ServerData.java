@@ -141,9 +141,9 @@ public class ServerData {
 		lock.writeLock().lock();
 		try {		
 			// Lógica de inicialización/reinicio de la secuencia
-////			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
-////				seqnum.set(-1);
-////			}
+			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+				seqnum.set(-1);
+			}
 			// Generar el nuevo timestamp con el ID del host y el incremento atómico
 			nextTimestamp = new Timestamp(id, seqnum.incrementAndGet());
 
@@ -185,7 +185,7 @@ public class ServerData {
 			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
 
 		} finally {
-			// Liberación garantizada del candado en el bloque finally
+			// Liberación bloqueo
 			lock.writeLock().unlock();
 		}
 	}
@@ -207,7 +207,7 @@ public class ServerData {
 			tombstones.removeIf(ts -> ts.compare(globalProgressCut.getLast(ts.getHostid())) <= 0);
 
 		} finally {
-			// 4. Liberación garantizada del candado
+			// Liberación bloqueo
 			lock.writeLock().unlock();
 		}
 	}
@@ -296,27 +296,34 @@ public class ServerData {
 	}
 
 
-	public void execOperation(Operation op) {
-		// Adquirir candado de escritura para proteger la modificación de datos
+    public void execOperation(Operation op) {
+        // Adquirir candado de escritura para proteger la modificación de datos
+        lock.writeLock().lock();
+        try {
+            // Procesar operación de adición usando Pattern Matching
+            if (op instanceof AddOperation addOp) {
+                Recipe recipeData = addOp.getRecipe();
 
-		// Procesar operación de adición usando Pattern Matching
-		if (op instanceof AddOperation addOp) {
-			Recipe recipeData = addOp.getRecipe();
+                // Crear una nueva instancia de la receta para asegurar la integridad local
+                Recipe newRecipe = new Recipe(
+                        recipeData.getTitle(),
+                        recipeData.getRecipe(),
+                        recipeData.getAuthor(),
+                        recipeData.getTimestamp()
+                );
 
-			// Crear una nueva instancia de la receta para asegurar la integridad local
-			Recipe newRecipe = new Recipe(
-					recipeData.getTitle(),
-					recipeData.getRecipe(),
-					recipeData.getAuthor(),
-					recipeData.getTimestamp()
-			);
-			recipes.add(newRecipe);
-			log.add(op); // Registrar en el log para futura propagación
+                recipes.add(newRecipe);
+                log.add(op); // Registrar en el log para futura propagación
 
-		}
-		// Procesar operación de eliminación
-		else if (op instanceof RemoveOperation removeOp) {
-			recipes.remove(removeOp.getRecipeTitle());
-		}
-	}
+            }
+            // Procesar operación de eliminación
+            else if (op instanceof RemoveOperation removeOp) {
+                recipes.remove(removeOp.getRecipeTitle());
+            }
+        } finally {
+            // Asegurar la liberación del candado siempre
+            lock.writeLock().unlock();
+        }
+    }
+
 }
