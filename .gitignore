@@ -2,3 +2,7 @@
 /bin/
 *.class
 /lsimLogs/
+/scripts/Results*
+/scripts/Results
+/2024p.iml
+/.idea/
