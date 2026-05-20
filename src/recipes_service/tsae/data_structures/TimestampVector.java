@@ -60,7 +60,8 @@ public class TimestampVector implements Serializable{
 
 	public TimestampVector (List<String> participants){
 		lock.writeLock().lock();
-		try {// create and empty TimestampVector
+		try {
+			// create and empty TimestampVector
 			for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
 				String id = it.next();
 				// when sequence number of timestamp < 0 it means that the timestamp is the null timestamp
@@ -78,9 +79,9 @@ public class TimestampVector implements Serializable{
 	 * Updates the timestamp vector with a new timestamp. 
 	 * @param timestamp
 	 */
-	public void updateTimestamp(Timestamp newTimestamp) {
+	public void updateTimestamp(Timestamp timestamp) {
 		// Validación temprana
-		if (newTimestamp == null) {
+		if (timestamp == null) {
 			LSimLogger.log(Level.WARN, "Attempted to update TimestampVector with a null timestamp.");
 			return;
 		}
@@ -88,19 +89,19 @@ public class TimestampVector implements Serializable{
 		// Adquisición del candado de escritura (Acción de modificación)
 		lock.writeLock().lock();
 		try {
-			String hostId = newTimestamp.getHostid();
+			String hostId = timestamp.getHostid();
 			Timestamp currentTimestamp = timestampVector.get(hostId);
 
-			// Lógica TSAE: Actualizar solo si es estrictamente posterior (máximo elemento)
-			if (currentTimestamp == null || newTimestamp.compare(currentTimestamp) > 0) {
-				timestampVector.put(hostId, newTimestamp);
+			// Actualizar solo si es estrictamente posterior (máximo elemento)
+			if (currentTimestamp == null || timestamp.compare(currentTimestamp) > 0) {
+				timestampVector.put(hostId, timestamp);
 
-				LSimLogger.log(Level.TRACE, "Updated Summary Vector for " + hostId + " to " + newTimestamp);
+				LSimLogger.log(Level.TRACE, "Updated Summary Vector for " + hostId + " to " + timestamp);
 				//return newTimestamp;
 
 			} else {
 				LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
-						+ ". Known: " + currentTimestamp + ", Received: " + newTimestamp);
+						+ ". Known: " + currentTimestamp + ", Received: " + timestamp);
 				//return currentTimestamp;
 
 			}
@@ -151,15 +152,15 @@ public class TimestampVector implements Serializable{
 	 * After merging, local node will have the smallest timestamp for each node.
 	 *  @param tsVector (timestamp vector)
 	 */
-	public void mergeMin(TimestampVector other) {
+	public void mergeMin(TimestampVector tsVector) {
 		// Validación de nulidad
-		if (other == null) return;
+		if (tsVector == null) return;
 
 		// Adquisición del candado de escritura
 		lock.writeLock().lock();
 		try {
 			// 3. Fusión de vectores usando el mínimo elemento a elemento
-			other.timestampVector.forEach((hostId, incomingTS) -> {
+			tsVector.timestampVector.forEach((hostId, incomingTS) -> {
 				if (incomingTS != null) {
 					timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
 							(incoming.compare(localTS) < 0) ? incoming : localTS
@@ -183,12 +184,12 @@ public class TimestampVector implements Serializable{
 			var participants = List.copyOf(this.timestampVector.keySet());
 
 			// Instanciar el nuevo vector (el constructor lo inicializa con valores nulos)
-			TimestampVector cloned = new TimestampVector(participants);
+			TimestampVector clonedTimestampVector = new TimestampVector(participants);
 
 			// Copiar profundamente los estados actuales (timestamps) al nuevo vector
-			cloned.timestampVector.putAll(this.timestampVector);
+			clonedTimestampVector.timestampVector.putAll(this.timestampVector);
 
-			return cloned;
+			return clonedTimestampVector;
 		} finally {
 			// Libera bloqueo
 			lock.readLock().unlock();

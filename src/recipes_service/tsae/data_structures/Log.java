@@ -164,11 +164,11 @@ public class Log implements Serializable{
 		if (this == obj) return true;
 		if (obj == null || getClass() != obj.getClass()) return false;
 
-		// Casting y sección crítica protegida
+		// Casting eguro a la clase Log
 		Log other = (Log) obj;
 		lock.readLock().lock();
 		try {
-			// Comparamos el contenido del mapa interno (ConcurrentHashMap)
+			// Comparar el mapa log de la instancia actual con el de la other
 			return this.log.equals(other.log);
 		} finally {
 			lock.readLock().unlock();

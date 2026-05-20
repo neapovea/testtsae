@@ -158,15 +158,15 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] Invalid or null AE_REQUEST message received.");
 			}
 		} catch (ClassNotFoundException e) {
-			LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] ClassNotFound: " + e.getMessage());
+			LSimLogger.log(Level.ERROR, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] ClassNotFound: " + e.getMessage());
 		} catch (IOException e) {
-			LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] IOException: " + e.getMessage());
+			LSimLogger.log(Level.ERROR, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] IOException: " + e.getMessage());
 		} finally {
 
 			try {
 				socket.close();
 			} catch (IOException e) {
-				LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] Error closing socket: " + e.getMessage());
+				LSimLogger.log(Level.ERROR, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] Error closing socket: " + e.getMessage());
 			}
 			lock.writeLock().unlock();
 			//LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] End TSAE session");
