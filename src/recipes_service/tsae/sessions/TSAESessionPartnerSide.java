@@ -106,14 +106,17 @@ public class TSAESessionPartnerSide extends Thread{
 				Message responseMsg = new MessageAErequest(localSummary, localAck);
 				responseMsg.setSessionNumber(current_session_number);
 				out.writeObject(responseMsg);
+				LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+ responseMsg);
 
 				// Recibir operaciones enviadas por el Originador
 				List<Operation> incomingOps = new ArrayList<>();
 				Message messageRecib = (Message) in.readObject();
+				LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] received message: "+ messageRecib);
 
 				while (messageRecib instanceof MessageOperation opMsg) {
 					incomingOps.add(opMsg.getOperation());
 					messageRecib = (Message) in.readObject();
+					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] received message: "+ messageRecib);
 				}
 
 				// Actualización de base de datos y metadatos, si recibimos el fin de sesión correctamente, aplicamos los cambios
@@ -122,6 +125,7 @@ public class TSAESessionPartnerSide extends Thread{
 					Message endMsg = new MessageEndTSAE();
 					endMsg.setSessionNumber(current_session_number);
 					out.writeObject(endMsg);
+					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+ endMsg);
 
 					lock.writeLock().lock();
 					try {

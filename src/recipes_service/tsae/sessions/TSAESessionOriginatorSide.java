@@ -31,11 +31,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import recipes_service.ServerData;
 import recipes_service.activity_simulation.SimulationData;
-import recipes_service.communication.Host;
-import recipes_service.communication.Message;
-import recipes_service.communication.MessageAErequest;
-import recipes_service.communication.MessageEndTSAE;
-import recipes_service.communication.MessageOperation;
+import recipes_service.communication.*;
 import recipes_service.data.Operation;
 import recipes_service.tsae.data_structures.TimestampMatrix;
 import recipes_service.tsae.data_structures.TimestampVector;
@@ -103,18 +99,25 @@ public class TSAESessionOriginatorSide extends TimerTask{
 			ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
 			ObjectOutputStream_DS out = new ObjectOutputStream_DS(socket.getOutputStream());
 
-			//  Preparar metadatos locales (Snapshot consistente)
-			var localSummary = serverData.getSummary().clone();
-			serverData.getAck().update(serverData.getId(), localSummary);
-			var localAck = serverData.getAck().clone();
+			TimestampVector localSummary = null;
+			TimestampMatrix localAck = null;
 
+			// Send to partner: local's summary and ack
+			//  Preparar metadatos locales (Snapshot consistente)
+			localSummary = serverData.getSummary().clone();
+			serverData.getAck().update(serverData.getId(), localSummary);
+			localAck = serverData.getAck().clone();
+
+			// receive operations from partner
 			// Enviar solicitud de Anti-Entropy
 			MessageAErequest requestMsg = new MessageAErequest(localSummary, localAck);
 			requestMsg.setSessionNumber(current_session_number);
 			out.writeObject(requestMsg);
+			LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] sent message: "+requestMsg);
 
 			// Fase de Recepción: Procesar actualizaciones enviadas por el compañero
 			Message msg = (Message) in.readObject();
+			LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] received message: "+msg);
 			while (msg instanceof MessageOperation opMsg) {
 				Operation operation = opMsg.getOperation();
 
@@ -125,8 +128,10 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				serverData.getAck().update(serverData.getId(), serverData.getSummary());
 
 				msg = (Message) in.readObject();
+				LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] received message: "+msg);
 			}
 
+			// receive partner's summary and ack
 			// Fase de Envío: Responder a la solicitud del compañero
 			if (msg instanceof MessageAErequest partnerReq) {
 				TimestampVector partnerSummary = partnerReq.getSummary();
@@ -135,21 +140,29 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				var newOperations = serverData.getLog().listNewer(partnerSummary);
 				serverData.getAck().updateMax(partnerAck);
 
+				// send operations
 				if (newOperations != null) {
 					for (Operation op : newOperations) {
 						MessageOperation opMsg = new MessageOperation(op);
 						opMsg.setSessionNumber(current_session_number);
 						out.writeObject(opMsg);
+						LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] sent message: "+opMsg);
 					}
 				}
 
+				// send and "end of TSAE session" message
 				// Finalización del protocolo (Handshake de cierre)
-				MessageEndTSAE endMsg = new MessageEndTSAE();
+				Message endMsg = new MessageEndTSAE();
 				endMsg.setSessionNumber(current_session_number);
 				out.writeObject(endMsg);
+				LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] sent message: "+endMsg);
 
+				// receive message to inform about the ending of the TSAE session
 				// Consistencia Final: Si el compañero confirma, actualizamos conocimiento global
-				if (in.readObject() instanceof MessageEndTSAE) {
+				endMsg = (Message) in.readObject();
+				LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] received message: "+endMsg);
+				if (msg.type() == MsgType.END_TSAE){
+				//if (in.readObject() instanceof MessageEndTSAE) {
 					serverData.getSummary().updateMax(partnerSummary);
 					serverData.getAck().updateMax(partnerAck);
 					serverData.getAck().update(serverData.getId(), serverData.getSummary());
