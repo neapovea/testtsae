@@ -49,8 +49,8 @@ import lsim.library.api.LSimLogger;
  */
 public class TSAESessionPartnerSide extends Thread{
 	
-	private Socket socket = null;
-	private ServerData serverData = null;
+	private final Socket socket;
+	private final ServerData serverData;
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
@@ -62,7 +62,7 @@ public class TSAESessionPartnerSide extends Thread{
 
 	public void run() {
 
-		Message msg = null;
+		Message msg;
 
 		int current_session_number = -1;
 
@@ -145,9 +145,10 @@ public class TSAESessionPartnerSide extends Thread{
 		} catch (ClassNotFoundException e) {
 			// TODO Auto-generated catch block
 			LSimLogger.log(Level.FATAL, "[TSAESessionPartnerSide] [session: "+current_session_number+"]" + e.getMessage());
-			e.printStackTrace();
+			//e.printStackTrace();
             System.exit(1);
 		}catch (IOException e) {
+			LSimLogger.log(Level.FATAL, "[TSAESessionPartnerSide] [session: "+current_session_number+"]" + e.getMessage());
 	    }
 		
 		LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] End TSAE session");
