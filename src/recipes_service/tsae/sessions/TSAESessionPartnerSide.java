@@ -69,6 +69,8 @@ public class TSAESessionPartnerSide extends Thread{
 		try {
 			ObjectOutputStream_DS out = new ObjectOutputStream_DS(socket.getOutputStream());
 			ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
+			// receive request from originator and update local state
+			// receive originator's summary and ack
 
 			TimestampVector localSummary;
 			TimestampMatrix localAck;
@@ -93,6 +95,7 @@ public class TSAESessionPartnerSide extends Thread{
 
 			if (msg instanceof MessageAErequest originator) {
 
+				// send operations
 				// Enviar operaciones que el Originador no tiene
 				// listNewer usa internamente un readLock para recorrer el log de forma segura
 				List<Operation> missingOps = serverData.getLog().listNewer(originator.getSummary());
@@ -102,12 +105,14 @@ public class TSAESessionPartnerSide extends Thread{
 					out.writeObject(opMsg);
 				}
 
+				// send to originator: local's summary and ack
 				// Enviar nuestro snapshot (Vectores de Resumen y Confirmación)
 				Message responseMsg = new MessageAErequest(localSummary, localAck);
 				responseMsg.setSessionNumber(current_session_number);
 				out.writeObject(responseMsg);
 				LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+ responseMsg);
 
+				// receive operations
 				// Recibir operaciones enviadas por el Originador
 				List<Operation> incomingOps = new ArrayList<>();
 				Message messageRecib = (Message) in.readObject();
@@ -119,6 +124,7 @@ public class TSAESessionPartnerSide extends Thread{
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] received message: "+ messageRecib);
 				}
 
+				// receive message to inform about the ending of the TSAE session
 				// Actualización de base de datos y metadatos, si recibimos el fin de sesión correctamente, aplicamos los cambios
 				if (messageRecib instanceof MessageEndTSAE) {
 					// Enviamos confirmación de cierre
