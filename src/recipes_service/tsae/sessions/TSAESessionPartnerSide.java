@@ -95,7 +95,11 @@ public class TSAESessionPartnerSide extends Thread{
 			if (msg.type() == MsgType.AE_REQUEST){
 				// ...
 				MessageAErequest originator = (MessageAErequest) msg;
-				List<Operation> missingOps = serverData.getLog().listNewer(originator.getSummary());
+				List<Operation> missingOps;
+
+				synchronized(serverData) {
+					missingOps = serverData.getLog().listNewer(originator.getSummary());
+				}
 
 	            // send operations
 				for (Operation op : missingOps) {					
@@ -134,12 +138,17 @@ public class TSAESessionPartnerSide extends Thread{
 
 					// Synchronize to avoid interference between threads
 					synchronized(serverData){
-						// Ejecutar operaciones y actualizar máximo (updateMax)
+						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
 						for (Operation op : incomingOps) {
+							serverData.getLog().add(op);
 							serverData.registerOperation(op);
-						}
+							serverData.getSummary().updateTimestamp(op.getTimestamp());
+						}						
+						
 						serverData.getSummary().updateMax(originator.getSummary());
 						serverData.getAck().updateMax(originator.getAck());
+						serverData.getAck().update(serverData.getId(), serverData.getSummary());
+
 					}
 				}
 			}
