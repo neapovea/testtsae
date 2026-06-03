@@ -221,7 +221,7 @@ public class TimestampVector implements Serializable{
 	 * toString
 	 */
 	@Override
-	public synchronized String toString() {
+	public String toString() {
 		// bloqueo lectura
 		lock.readLock().lock();
 		try {
