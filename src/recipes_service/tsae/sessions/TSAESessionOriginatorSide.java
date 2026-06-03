@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.TimerTask;
 import java.util.Vector;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -61,7 +62,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 	private ServerData serverData;
 
 	//private final Object sessionLock = new Object();
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+	//private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TSAESessionOriginatorSide(ServerData serverData){
 		super();
@@ -109,15 +110,10 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
 				ObjectOutputStream_DS out = new ObjectOutputStream_DS(socket.getOutputStream());
 
-				TimestampVector localSummary = null;
-				TimestampMatrix localAck = null;
-
-				// Clone the local summary and update the local acknowledgment matrix
-				synchronized (serverData) {
-					localSummary = this.serverData.getSummary().clone();
-					serverData.getAck().update(serverData.getId(), localSummary);
-					localAck = this.serverData.getAck().clone();
-				}
+				// Preparar y extraer el estado limpiamente sin bloqueos manuales
+				serverData.prepareLocalState();
+				TimestampVector localSummary = serverData.getSummary().clone();
+				TimestampMatrix localAck = serverData.getAck().clone();
 
 				// Send to partner: local's summary and ack
 				MessageAErequest requestMsg = new MessageAErequest(localSummary, localAck);
@@ -140,17 +136,8 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
 				}
 
-
-				// Ahora todas las operaciones se registran de manera atómica (bloqueando serverData)
-				synchronized (serverData) {
-					for(Operation op : incomingOps) {
-						serverData.getLog().add(op);
-						serverData.registerOperation(op);
-						serverData.getSummary().updateTimestamp(op.getTimestamp());
-					}
-					serverData.getAck().update(serverData.getId(), serverData.getSummary());
-				}
-
+				// Integra ops, todavía no tenemos summary/ack del partner
+				serverData.applySessionUpdates(incomingOps, null, null);
 
 				// receive partner's summary and ack
 				if (msg != null && msg.type() == MsgType.AE_REQUEST){
@@ -158,13 +145,8 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					TimestampVector partnerSummary = ((MessageAErequest) msg).getSummary();
 					TimestampMatrix partnerAck = ((MessageAErequest) msg).getAck();
 
-					List<Operation> newOperations;
-
-					// Sincronizar al extraer las nuevas operaciones para evitar problemas.
-					synchronized(serverData) {
-						newOperations = serverData.getLog().listNewer(partnerSummary);
-						serverData.getAck().updateMax(partnerAck);
-					}
+					// Extraemos las ops que el partner no tiene
+					List<Operation> newOperations = serverData.getLog().listNewer(partnerSummary);
 
 					// send operations
 					if (newOperations != null) {
@@ -188,11 +170,8 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
 					if (msg != null && msg.type() == MsgType.END_TSAE){
 					//
-						synchronized (serverData) {
-							serverData.getSummary().updateMax(partnerSummary);
-							serverData.getAck().updateMax(partnerAck);
-							serverData.getAck().update(serverData.getId(), serverData.getSummary());
-						}
+						// Actualizar los summary/ack maximos al terminar
+						serverData.applySessionUpdates(Collections.emptyList(), partnerSummary, partnerAck);
 					}
 				} else {
 					LSimLogger.log(Level.WARN, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] Invalid or null AE_REQUEST message received.");

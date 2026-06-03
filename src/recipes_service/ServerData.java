@@ -144,43 +144,57 @@ public class ServerData {
 	// ******************************
 	// *** add and remove recipes
 	// ******************************
-	public synchronized void addRecipe(String recipeTitle, String recipe) {
+	public void addRecipe(String recipeTitle, String recipe) {
 
 		if (recipeTitle == null || recipe == null) {
 			LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
 			return;
 		}
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {		
 
-		Timestamp timestamp = nextTimestamp();
-		Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
-		Operation op = new AddOperation(rcpe, timestamp);
+			Timestamp timestamp = nextTimestamp();
+			Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
+			Operation op = new AddOperation(rcpe, timestamp);
 
-		// actualizar las estructuras de datos del servidor
-		log.add(op);                        	// Añadir al log de mensajes para propagación
-		summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
-		recipes.add(rcpe);                 		// Añadir Recipe
+			// actualizar las estructuras de datos del servidor
+			log.add(op);                        	// Añadir al log de mensajes para propagación
+			summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
+			recipes.add(rcpe);                 		// Añadir Recipe
 
-		LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
+			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
 
 	}
 	
-	public synchronized void removeRecipe(String recipeTitle){
+	public void removeRecipe(String recipeTitle){
 		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
 	}
 
-	private synchronized void purgeTombstones() {
+	private void purgeTombstones() {
 		if (ack == null){
 			return;
 		}
-		TimestampVector sum = ack.minTimestampVector();
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {
+			TimestampVector sum = ack.minTimestampVector();
 
-		List<Timestamp> newTombstones = new Vector<Timestamp>();
-		for(int i=0; i<tombstones.size(); i++){
-			if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
-				newTombstones.add(tombstones.get(i));
+			List<Timestamp> newTombstones = new Vector<Timestamp>();
+			for(int i=0; i<tombstones.size(); i++){
+				if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
+					newTombstones.add(tombstones.get(i));
+				}
 			}
+			tombstones = newTombstones;
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
 		}
-		tombstones = newTombstones;
 	}
 
 
@@ -267,27 +281,76 @@ public class ServerData {
 	}
 
 
-    public synchronized void registerOperation(Operation op) {
-		// Procesar operación a agregar
-		if (op instanceof AddOperation addOp) {
-			Recipe recipeData = addOp.getRecipe();
+    public void registerOperation(Operation op) {
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {		
+			// Procesar operación a agregar
+			if (op instanceof AddOperation addOp) {
+				Recipe recipeData = addOp.getRecipe();
 
-			// Crear nueva instancia de Recipe para asegurar la integridad local
-			Recipe newRecipe = new Recipe(
-					recipeData.getTitle(),
-					recipeData.getRecipe(),
-					recipeData.getAuthor(),
-					recipeData.getTimestamp()
-			);
+				// Crear nueva instancia de Recipe para asegurar la integridad local
+				Recipe newRecipe = new Recipe(
+						recipeData.getTitle(),
+						recipeData.getRecipe(),
+						recipeData.getAuthor(),
+						recipeData.getTimestamp()
+				);
 
-			recipes.add(newRecipe);
-			//log.add(op); // Registrar en el log para futura propagación
+				recipes.add(newRecipe);
+				//log.add(op); // Registrar en el log para futura propagación
 
-		}
-		// Procesar operación de eliminar
-		else if (op instanceof RemoveOperation removeOp) {
-			recipes.remove(removeOp.getRecipeTitle());
-		}
+			}
+			// Procesar operación de eliminar
+			else if (op instanceof RemoveOperation removeOp) {
+				recipes.remove(removeOp.getRecipeTitle());
+			}
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}			
     }
 
+
+	/**
+	 * Prepara el estado local actualizando la matriz de Ack con nuestro Summary actual.
+	 * Se usa al inicio de una sesión TSAE para tener el estado consistente antes de enviarlo.
+	 */
+	public void prepareLocalState() {
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {
+			this.ack.update(this.id, this.summary);
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
+	}
+
+	/**
+	 * Aplicar de forma atómica todas las actualizaciones y cambios de estado recibidos durante una sesión de anti-entropía.
+	 */
+	public void applySessionUpdates(List<Operation> incomingOps, TimestampVector remoteSummary, TimestampMatrix remoteAck) {
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {
+			// 1. Integrar operaciones
+			if (incomingOps != null) {
+				for (Operation op : incomingOps) {
+					this.log.add(op);
+					this.registerOperation(op); // El RRWL permite reentrada aquí
+					this.summary.updateTimestamp(op.getTimestamp());
+				}
+			}
+			// 2. Fusionar vectores
+			if (remoteSummary != null) this.summary.updateMax(remoteSummary);
+			if (remoteAck != null) this.ack.updateMax(remoteAck);
+			
+			// 3. Confirmar que estamos al día
+			this.ack.update(this.id, this.summary);
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
+	}
 }

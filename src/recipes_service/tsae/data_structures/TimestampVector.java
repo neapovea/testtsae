@@ -59,18 +59,11 @@ public class TimestampVector implements Serializable{
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TimestampVector (List<String> participants){
-		// bloqueo
-		lock.writeLock().lock();
-		try {
-			// create and empty TimestampVector
-			for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
-				String id = it.next();
-				// when sequence number of timestamp < 0 it means that the timestamp is the null timestamp
-				timestampVector.put(id, new Timestamp(id, Timestamp.NULL_TIMESTAMP_SEQ_NUMBER));
-			}
-		} finally {
-			// Libera bloqueo
-			lock.writeLock().unlock();
+		// create and empty TimestampVector
+		for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
+			String id = it.next();
+			// when sequence number of timestamp < 0 it means that the timestamp is the null timestamp
+			timestampVector.put(id, new Timestamp(id, Timestamp.NULL_TIMESTAMP_SEQ_NUMBER));
 		}
 	}
 
@@ -80,39 +73,51 @@ public class TimestampVector implements Serializable{
 	 * Updates the timestamp vector with a new timestamp. 
 	 * @param timestamp
 	 */
-	public synchronized void updateTimestamp(Timestamp timestamp) {
+	public void updateTimestamp(Timestamp timestamp) {
 		// Validación
 		if (timestamp == null) {
 			LSimLogger.log(Level.WARN, "Attempted to update TimestampVector with a null timestamp.");
 			return;
 		}
-
-		// Actualizar timestamp del host si el nuevo valor es más reciente (o si es la primera).
-		timestampVector.compute(timestamp.getHostid(), (hostId, currentTimestamp) -> {
-			if (currentTimestamp == null || timestamp.compare(currentTimestamp) > 0) {
-				LSimLogger.log(Level.TRACE, "Updated timestamp for " + hostId + " to " + timestamp);
-				return timestamp;
-			}
-			LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
-					+ ". Current timestamp: " + currentTimestamp
-					+ ", New timestamp: " + timestamp);
-			return currentTimestamp;
-		});
-
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {
+			// Actualizar timestamp del host si el nuevo valor es más reciente (o si es la primera).
+			timestampVector.compute(timestamp.getHostid(), (hostId, currentTimestamp) -> {
+				if (currentTimestamp == null || timestamp.compare(currentTimestamp) > 0) {
+					LSimLogger.log(Level.TRACE, "Updated timestamp for " + hostId + " to " + timestamp);
+					return timestamp;
+				}
+				LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
+						+ ". Current timestamp: " + currentTimestamp
+						+ ", New timestamp: " + timestamp);
+				return currentTimestamp;
+			});
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
 	}
 	
 	/**
 	 * merge in another vector, taking the elementwise maximum
 	 * @param tsVector (a timestamp vector)
 	 */
-	public synchronized void updateMax(TimestampVector tsVector) {
+	public void updateMax(TimestampVector tsVector) {
 		if (tsVector == null)
 			return;
-		// Bucle para sincronizar el vector local conservando el timestamp más reciente para cada nodo.
-		tsVector.timestampVector.forEach((id, incomingTS) -> timestampVector.compute(id,
-				(key, localTS) -> (incomingTS != null && (localTS == null || incomingTS.compare(localTS) > 0))
-						? incomingTS
-						: localTS));
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {		
+			// Bucle para sincronizar el vector local conservando el timestamp más reciente para cada nodo.
+			tsVector.timestampVector.forEach((id, incomingTS) -> timestampVector.compute(id,
+					(key, localTS) -> (incomingTS != null && (localTS == null || incomingTS.compare(localTS) > 0))
+							? incomingTS
+							: localTS));
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
 	}
 	
 	/**
@@ -121,64 +126,91 @@ public class TimestampVector implements Serializable{
 	 * @return the last timestamp issued by node that has been
 	 * received.
 	 */
-	public synchronized Timestamp getLast(String node){
-		return timestampVector.get(node);
+	public Timestamp getLast(String node){
+		// bloqueo lectura
+		lock.readLock().lock();
+		try {		
+			return timestampVector.get(node);
+		} finally {
+			// liberar bloqueo lectura
+			lock.readLock().unlock();
+		}			
 	}
-	
+
 	/**
 	 * merges local timestamp vector with tsVector timestamp vector taking
 	 * the smallest timestamp for each node.
 	 * After merging, local node will have the smallest timestamp for each node.
 	 *  @param tsVector (timestamp vector)
 	 */
-	public synchronized void mergeMin(TimestampVector tsVector) {
+	public void mergeMin(TimestampVector tsVector) {
 		if (tsVector == null)
 			return;
+		// bloqueo escritura
+		lock.writeLock().lock();
+		try {		
 
-		// Fusionar vectores usando el mínimo elemento a elemento
-		tsVector.timestampVector.forEach((hostId, incomingTS) -> {
-			if (incomingTS != null) {
-				timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
-						(incoming.compare(localTS) < 0) ? incoming : localTS
-				);
-			}
-		});
+			// Fusionar vectores usando el mínimo elemento a elemento
+			tsVector.timestampVector.forEach((hostId, incomingTS) -> {
+				if (incomingTS != null) {
+					timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
+							(incoming.compare(localTS) < 0) ? incoming : localTS
+					);
+				}
+			});
+		} finally {
+			// liberar bloqueo escritura
+			lock.writeLock().unlock();
+		}
 	}
 	
 	/**
 	 * clone
 	 */
 	@Override
-	public synchronized TimestampVector clone() {
-		// Crear una lista de los participantes actuales
-		var participants = List.copyOf(this.timestampVector.keySet());
+	public TimestampVector clone() {
+		// bloqueo lectura
+		lock.readLock().lock();
+		try {		
+			// Crear una lista de los participantes actuales
+			var participants = List.copyOf(this.timestampVector.keySet());
 
-		// Instanciar el nuevo vector
-		TimestampVector clonedTimestampVector = new TimestampVector(participants);
+			// Instanciar el nuevo vector
+			TimestampVector clonedTimestampVector = new TimestampVector(participants);
 
-		// Copiar el timestamps al completo al nuevo vector
-		clonedTimestampVector.timestampVector.putAll(this.timestampVector);
+			// Copiar el timestamps al completo al nuevo vector
+			clonedTimestampVector.timestampVector.putAll(this.timestampVector);
 
-		return clonedTimestampVector;
+			return clonedTimestampVector;
+		} finally {
+			// liberar bloqueo lectura
+			lock.readLock().unlock();
+		}			
 	}
 	/**
 	 * equals
 	 */
 	@Override
-	public synchronized boolean equals(Object obj) {
-
+	public boolean equals(Object obj) {
 		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
 		if (obj == null) return false;
 		if (getClass() != obj.getClass()) return false;
-
 		//  Casting seguro a la clase Log
 		TimestampVector other = (TimestampVector) obj;
-		
-		// Comparar el mapa log de la instancia actual con el de la other
-		if (this.timestampVector  == null) {
-			return other.timestampVector == null;
-		} else return this.timestampVector.equals(other.timestampVector);
+
+		// bloqueo lectura
+		lock.readLock().lock();
+		try {
+			
+			// Comparar el mapa log de la instancia actual con el de la other
+			if (this.timestampVector  == null) {
+				return other.timestampVector == null;
+			} else return this.timestampVector.equals(other.timestampVector);
+		} finally {
+			// liberar bloqueo lectura
+			lock.readLock().unlock();
+		}			
 
 
 	}
@@ -189,19 +221,24 @@ public class TimestampVector implements Serializable{
 	 * toString
 	 */
 	@Override
-	public synchronized String toString() {
-		// bloqueo
+	public String toString() {
+		// bloqueo lectura
+		lock.readLock().lock();
+		try {
 
-		String all="";
-		if(timestampVector==null){
+			String all="";
+			if(timestampVector==null){
+				return all;
+			}
+			for(Enumeration<String> en=timestampVector.keys(); en.hasMoreElements();){
+				String name=en.nextElement();
+				if(timestampVector.get(name)!=null)
+					all+=timestampVector.get(name)+"\n";
+			}
 			return all;
+		} finally {
+			// liberar bloqueo lectura
+			lock.readLock().unlock();
 		}
-		for(Enumeration<String> en=timestampVector.keys(); en.hasMoreElements();){
-			String name=en.nextElement();
-			if(timestampVector.get(name)!=null)
-				all+=timestampVector.get(name)+"\n";
-		}
-		return all;
-
 	}
 }
