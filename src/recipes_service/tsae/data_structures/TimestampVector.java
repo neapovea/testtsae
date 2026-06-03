@@ -121,7 +121,7 @@ public class TimestampVector implements Serializable{
 	 * @return the last timestamp issued by node that has been
 	 * received.
 	 */
-	public Timestamp getLast(String node){
+	public synchronized Timestamp getLast(String node){
 		return timestampVector.get(node);
 	}
 	
@@ -149,30 +149,23 @@ public class TimestampVector implements Serializable{
 	 * clone
 	 */
 	@Override
-	public TimestampVector clone() {
-		// bloqueo
-		lock.readLock().lock();
-		try {
-			// Crear una lista de los participantes actuales
-			var participants = List.copyOf(this.timestampVector.keySet());
+	public synchronized TimestampVector clone() {
+		// Crear una lista de los participantes actuales
+		var participants = List.copyOf(this.timestampVector.keySet());
 
-			// Instanciar el nuevo vector
-			TimestampVector clonedTimestampVector = new TimestampVector(participants);
+		// Instanciar el nuevo vector
+		TimestampVector clonedTimestampVector = new TimestampVector(participants);
 
-			// Copiar el timestamps al completo al nuevo vector
-			clonedTimestampVector.timestampVector.putAll(this.timestampVector);
+		// Copiar el timestamps al completo al nuevo vector
+		clonedTimestampVector.timestampVector.putAll(this.timestampVector);
 
-			return clonedTimestampVector;
-		} finally {
-			// Libera bloqueo
-			lock.readLock().unlock();
-		}
+		return clonedTimestampVector;
 	}
 	/**
 	 * equals
 	 */
 	@Override
-	public boolean equals(Object obj) {
+	public synchronized boolean equals(Object obj) {
 
 		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
@@ -181,18 +174,13 @@ public class TimestampVector implements Serializable{
 
 		//  Casting seguro a la clase Log
 		TimestampVector other = (TimestampVector) obj;
-		// bloqueo
-		lock.readLock().lock();
-		try {
-			// Comparar el mapa log de la instancia actual con el de la other
-			if (this.timestampVector  == null) {
-				return other.timestampVector == null;
-			} else return this.timestampVector.equals(other.timestampVector);
+		
+		// Comparar el mapa log de la instancia actual con el de la other
+		if (this.timestampVector  == null) {
+			return other.timestampVector == null;
+		} else return this.timestampVector.equals(other.timestampVector);
 
-		} finally {
-			// libera bloqueo
-			lock.readLock().unlock();
-		}
+
 	}
 
 
