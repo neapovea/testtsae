@@ -267,7 +267,7 @@ public class ServerData {
 	}
 
 
-    public void registerOperation(Operation op) {
+    public synchronized void registerOperation(Operation op) {
 		// Procesar operación a agregar
 		if (op instanceof AddOperation addOp) {
 			Recipe recipeData = addOp.getRecipe();
@@ -281,7 +281,7 @@ public class ServerData {
 			);
 
 			recipes.add(newRecipe);
-			log.add(op); // Registrar en el log para futura propagación
+			//log.add(op); // Registrar en el log para futura propagación
 
 		}
 		// Procesar operación de eliminar
