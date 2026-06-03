@@ -22,6 +22,7 @@ package recipes_service;
 
 import java.util.List;
 import java.util.Timer;
+import java.util.Vector;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -87,7 +88,7 @@ public class ServerData {
 	// TODO: esborrar aquesta estructura de dades
 	// tombstones: timestamp of removed operations
 	//List<Timestamp> tombstones = new Vector<Timestamp>();
-	private final List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
+	private List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
 
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -132,67 +133,54 @@ public class ServerData {
 	// *** timestamps
 	// ******************************
 	private Timestamp nextTimestamp(){
-		Timestamp nextTimestamp = null;
-
-		// Adquirir el candado de escritura para asegurar exclusividad total
-		lock.writeLock().lock();
-		try {		
-			// Lógica de inicialización/reinicio de la secuencia
-			if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
-				seqnum.set(-1);
-			}
-			// Generar el nuevo timestamp con el ID del host y el incremento atómico
-			nextTimestamp = new Timestamp(id, seqnum.incrementAndGet());
-
-		} finally {
-			// Liberar siempre el candado en el bloque finally
-			lock.writeLock().unlock();
-		}
-
-		return nextTimestamp;
+		// Iniciar secuencia
+//		if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+//			seqnum.set(-1);
+//		}
+		// Generar nuevo timestamp con el ID del host y el incremento de la secuencia
+		return  new Timestamp(id, seqnum.incrementAndGet());
 	}
 
 	// ******************************
 	// *** add and remove recipes
 	// ******************************
-	public void addRecipe(String recipeTitle, String recipe) {
-		// Validación de entrada (fuera del bloqueo para mayor eficiencia)
+	public synchronized void addRecipe(String recipeTitle, String recipe) {
+
 		if (recipeTitle == null || recipe == null) {
 			LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
 			return;
 		}
 
-		// Adquisición del candado de escritura
-		// Garantiza que ninguna sesión de anti-entropía lea datos inconsistentes mientras se añade la receta
-		lock.writeLock().lock();
-		try {
-			// Generación de metadatos del protocolo TSAE
-			// El próximo timestamp válido se obtiene mediante nextTimestamp()
-			Timestamp timestamp = nextTimestamp();
+		Timestamp timestamp = nextTimestamp();
+		Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
+		Operation op = new AddOperation(rcpe, timestamp);
 
-			// Creación de la receta y la operación de suma
-			Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
-			Operation op = new AddOperation(rcpe, timestamp);
+		// actualizar las estructuras de datos del servidor
+		log.add(op);                        	// Añadir al log de mensajes para propagación
+		summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
+		recipes.add(rcpe);                 		// Añadir Recipe
 
-			// Actualización atómica de las estructuras de datos del servidor [1]
-			log.add(op);                        // Añadir al log de mensajes para propagación
-			summary.updateTimestamp(timestamp); // Actualizar el conocimiento local del host
-			recipes.add(rcpe);                 // Actualizar el estado de la aplicación local
+		LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
 
-			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
-
-		} finally {
-			// Liberación bloqueo
-			lock.writeLock().unlock();
-		}
 	}
 	
 	public synchronized void removeRecipe(String recipeTitle){
 		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
 	}
 
-	private void purgeTombstones() {
-		System.err.println("Error: purgeTombstones method (serverData) not yet implemented");
+	private synchronized void purgeTombstones() {
+		if (ack == null){
+			return;
+		}
+		TimestampVector sum = ack.minTimestampVector();
+
+		List<Timestamp> newTombstones = new Vector<Timestamp>();
+		for(int i=0; i<tombstones.size(); i++){
+			if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
+				newTombstones.add(tombstones.get(i));
+			}
+		}
+		tombstones = newTombstones;
 	}
 
 
@@ -280,33 +268,26 @@ public class ServerData {
 
 
     public void registerOperation(Operation op) {
-        // Adquirir candado de escritura para proteger la modificación de datos
-        lock.writeLock().lock();
-        try {
-            // Procesar operación de adición usando Pattern Matching
-            if (op instanceof AddOperation addOp) {
-                Recipe recipeData = addOp.getRecipe();
+		// Procesar operación a agregar
+		if (op instanceof AddOperation addOp) {
+			Recipe recipeData = addOp.getRecipe();
 
-                // Crear una nueva instancia de la receta para asegurar la integridad local
-                Recipe newRecipe = new Recipe(
-                        recipeData.getTitle(),
-                        recipeData.getRecipe(),
-                        recipeData.getAuthor(),
-                        recipeData.getTimestamp()
-                );
+			// Crear nueva instancia de Recipe para asegurar la integridad local
+			Recipe newRecipe = new Recipe(
+					recipeData.getTitle(),
+					recipeData.getRecipe(),
+					recipeData.getAuthor(),
+					recipeData.getTimestamp()
+			);
 
-                recipes.add(newRecipe);
-                log.add(op); // Registrar en el log para futura propagación
+			recipes.add(newRecipe);
+			log.add(op); // Registrar en el log para futura propagación
 
-            }
-            // Procesar operación de eliminación
-            else if (op instanceof RemoveOperation removeOp) {
-                recipes.remove(removeOp.getRecipeTitle());
-            }
-        } finally {
-            // Asegurar la liberación del candado siempre
-            lock.writeLock().unlock();
-        }
+		}
+		// Procesar operación de eliminar
+		else if (op instanceof RemoveOperation removeOp) {
+			recipes.remove(removeOp.getRecipeTitle());
+		}
     }
 
 }

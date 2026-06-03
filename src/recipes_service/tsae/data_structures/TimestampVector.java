@@ -59,6 +59,7 @@ public class TimestampVector implements Serializable{
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TimestampVector (List<String> participants){
+		// bloqueo
 		lock.writeLock().lock();
 		try {
 			// create and empty TimestampVector
@@ -79,61 +80,39 @@ public class TimestampVector implements Serializable{
 	 * Updates the timestamp vector with a new timestamp. 
 	 * @param timestamp
 	 */
-	public void updateTimestamp(Timestamp timestamp) {
-		// Validación temprana
+	public synchronized void updateTimestamp(Timestamp timestamp) {
+		// Validación
 		if (timestamp == null) {
 			LSimLogger.log(Level.WARN, "Attempted to update TimestampVector with a null timestamp.");
 			return;
 		}
 
-		// Adquisición del candado de escritura (Acción de modificación)
-		lock.writeLock().lock();
-		try {
-			String hostId = timestamp.getHostid();
-			Timestamp currentTimestamp = timestampVector.get(hostId);
-
-			// Actualizar solo si es estrictamente posterior (máximo elemento)
+		// Actualizar timestamp del host si el nuevo valor es más reciente (o si es la primera).
+		timestampVector.compute(timestamp.getHostid(), (hostId, currentTimestamp) -> {
 			if (currentTimestamp == null || timestamp.compare(currentTimestamp) > 0) {
-				timestampVector.put(hostId, timestamp);
-
-				LSimLogger.log(Level.TRACE, "Updated Summary Vector for " + hostId + " to " + timestamp);
-				//return newTimestamp;
-
-			} else {
-				LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
-						+ ". Known: " + currentTimestamp + ", Received: " + timestamp);
-				//return currentTimestamp;
-
+				LSimLogger.log(Level.TRACE, "Updated timestamp for " + hostId + " to " + timestamp);
+				return timestamp;
 			}
-		} finally {
-			// Libera bloqueo
-			lock.writeLock().unlock();
-		}
+			LSimLogger.log(Level.TRACE, "Skipped update for " + hostId
+					+ ". Current timestamp: " + currentTimestamp
+					+ ", New timestamp: " + timestamp);
+			return currentTimestamp;
+		});
+
 	}
 	
 	/**
 	 * merge in another vector, taking the elementwise maximum
 	 * @param tsVector (a timestamp vector)
 	 */
-	public void updateMax(TimestampVector tsVector) {
-		// Validación de nulidad
-		if (tsVector == null) return;
-
-		// Adquisición del candado de escritura
-		lock.writeLock().lock();
-		try {
-			// Fusión de vectores usando el máximo elemento a elemento
-			tsVector.timestampVector.forEach((hostId, incomingTS) -> {
-				if (incomingTS != null) {
-					timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
-							(incoming.compare(localTS) > 0) ? incoming : localTS
-					);
-				}
-			});
-		} finally {
-			// Libera bloqueo
-			lock.writeLock().unlock();
-		}
+	public synchronized void updateMax(TimestampVector tsVector) {
+		if (tsVector == null)
+			return;
+		// Bucle para sincronizar el vector local conservando el timestamp más reciente para cada nodo.
+		tsVector.timestampVector.forEach((id, incomingTS) -> timestampVector.compute(id,
+				(key, localTS) -> (incomingTS != null && (localTS == null || incomingTS.compare(localTS) > 0))
+						? incomingTS
+						: localTS));
 	}
 	
 	/**
@@ -152,25 +131,18 @@ public class TimestampVector implements Serializable{
 	 * After merging, local node will have the smallest timestamp for each node.
 	 *  @param tsVector (timestamp vector)
 	 */
-	public void mergeMin(TimestampVector tsVector) {
-		// Validación de nulidad
-		if (tsVector == null) return;
+	public synchronized void mergeMin(TimestampVector tsVector) {
+		if (tsVector == null)
+			return;
 
-		// Adquisición del candado de escritura
-		lock.writeLock().lock();
-		try {
-			// 3. Fusión de vectores usando el mínimo elemento a elemento
-			tsVector.timestampVector.forEach((hostId, incomingTS) -> {
-				if (incomingTS != null) {
-					timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
-							(incoming.compare(localTS) < 0) ? incoming : localTS
-					);
-				}
-			});
-		} finally {
-			// Libera bloqueo
-			lock.writeLock().unlock();
-		}
+		// Fusionar vectores usando el mínimo elemento a elemento
+		tsVector.timestampVector.forEach((hostId, incomingTS) -> {
+			if (incomingTS != null) {
+				timestampVector.merge(hostId, incomingTS, (localTS, incoming) ->
+						(incoming.compare(localTS) < 0) ? incoming : localTS
+				);
+			}
+		});
 	}
 	
 	/**
@@ -178,15 +150,16 @@ public class TimestampVector implements Serializable{
 	 */
 	@Override
 	public TimestampVector clone() {
+		// bloqueo
 		lock.readLock().lock();
 		try {
-			// Crear una lista de los participantes actuales de forma más limpia
+			// Crear una lista de los participantes actuales
 			var participants = List.copyOf(this.timestampVector.keySet());
 
-			// Instanciar el nuevo vector (el constructor lo inicializa con valores nulos)
+			// Instanciar el nuevo vector
 			TimestampVector clonedTimestampVector = new TimestampVector(participants);
 
-			// Copiar profundamente los estados actuales (timestamps) al nuevo vector
+			// Copiar el timestamps al completo al nuevo vector
 			clonedTimestampVector.timestampVector.putAll(this.timestampVector);
 
 			return clonedTimestampVector;
@@ -200,18 +173,24 @@ public class TimestampVector implements Serializable{
 	 */
 	@Override
 	public boolean equals(Object obj) {
+
 		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
-		if (obj == null || getClass() != obj.getClass()) return false;
+		if (obj == null) return false;
+		if (getClass() != obj.getClass()) return false;
 
-		// Casting y sección crítica protegida
+		//  Casting seguro a la clase Log
 		TimestampVector other = (TimestampVector) obj;
-
+		// bloqueo
 		lock.readLock().lock();
 		try {
-			TimestampVector comp = (TimestampVector) obj;
-			return timestampVector.equals(comp.timestampVector);
+			// Comparar el mapa log de la instancia actual con el de la other
+			if (this.timestampVector  == null) {
+				return other.timestampVector == null;
+			} else return this.timestampVector.equals(other.timestampVector);
+
 		} finally {
+			// libera bloqueo
 			lock.readLock().unlock();
 		}
 	}
@@ -222,15 +201,19 @@ public class TimestampVector implements Serializable{
 	 * toString
 	 */
 	@Override
-	public String toString() {
-		lock.readLock().lock();
-		try {
-			// Usamos Streams para transformar cada Timestamp en String y unirlos con saltos de línea
-			return timestampVector.values().stream()
-					.map(ts -> ts != null ? ts.toString() : "null")
-					.collect(Collectors.joining("\n", "", "\n"));
-		} finally {
-			lock.readLock().unlock();
+	public synchronized String toString() {
+		// bloqueo
+
+		String all="";
+		if(timestampVector==null){
+			return all;
 		}
+		for(Enumeration<String> en=timestampVector.keys(); en.hasMoreElements();){
+			String name=en.nextElement();
+			if(timestampVector.get(name)!=null)
+				all+=timestampVector.get(name)+"\n";
+		}
+		return all;
+
 	}
 }
