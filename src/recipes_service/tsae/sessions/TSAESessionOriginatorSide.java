@@ -62,7 +62,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 	private ServerData serverData;
 
 	//private final Object sessionLock = new Object();
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+	//private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TSAESessionOriginatorSide(ServerData serverData){
 		super();

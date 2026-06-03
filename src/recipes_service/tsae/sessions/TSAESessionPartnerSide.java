@@ -52,7 +52,7 @@ public class TSAESessionPartnerSide extends Thread{
 	
 	private final Socket socket;
 	private final ServerData serverData;
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+	//private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
 	public TSAESessionPartnerSide(Socket socket, ServerData serverData) {
