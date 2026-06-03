@@ -74,17 +74,11 @@ public class TSAESessionPartnerSide extends Thread{
 			// receive request from originator and update local state
 			// receive originator's summary and ack
 
-			TimestampVector localSummary;
-			TimestampMatrix localAck;
+			// Preparars estado y clonar de forma segura
+			serverData.prepareLocalState();
+			TimestampVector localSummary = serverData.getSummary().clone();
+			TimestampMatrix localAck = serverData.getAck().clone();
 
-
-			synchronized(serverData){
-				// Clone the local summary and update the acknowledgment matrix
-				localSummary = this.serverData.getSummary().clone();
-				serverData.getAck().update(serverData.getId(), localSummary);
-				localAck = this.serverData.getAck().clone();
-			}
-			
 			// receive request from originator and update local state
 			// receive originator's summary and ack
 			msg = (Message) in.readObject();
@@ -95,11 +89,9 @@ public class TSAESessionPartnerSide extends Thread{
 			if (msg.type() == MsgType.AE_REQUEST){
 				// ...
 				MessageAErequest originator = (MessageAErequest) msg;
-				List<Operation> missingOps;
 
-				synchronized(serverData) {
-					missingOps = serverData.getLog().listNewer(originator.getSummary());
-				}
+				// Buscamos las que nos faltan por mandar
+				List<Operation> missingOps = serverData.getLog().listNewer(originator.getSummary());
 
 	            // send operations
 				for (Operation op : missingOps) {					
@@ -136,20 +128,8 @@ public class TSAESessionPartnerSide extends Thread{
 					out.writeObject(msg);
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+"\n"+ msg);
 
-					// Synchronize to avoid interference between threads
-					synchronized(serverData){
-						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
-						for (Operation op : incomingOps) {
-							serverData.getLog().add(op);
-							serverData.registerOperation(op);
-							serverData.getSummary().updateTimestamp(op.getTimestamp());
-						}						
-						
-						serverData.getSummary().updateMax(originator.getSummary());
-						serverData.getAck().updateMax(originator.getAck());
-						serverData.getAck().update(serverData.getId(), serverData.getSummary());
-
-					}
+					// El serverData lo integra todo de golpe (ops, summary y ack del originador)
+					serverData.applySessionUpdates(incomingOps, originator.getSummary(), originator.getAck());
 				}
 			}
 			socket.close();
