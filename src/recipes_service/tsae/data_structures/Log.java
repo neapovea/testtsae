@@ -96,32 +96,26 @@ public class Log implements Serializable{
 	 * @param sum The sum of timestamps to compare against.
 	 * @return A list of operations that are newer than the given sum of timestamps.
 	 */
-	public List<Operation> listNewer(TimestampVector partnerSummary) {
+	public synchronized List<Operation> listNewer(TimestampVector partnerSummary) {
 		List<Operation> newOperations = new ArrayList<>();
-		//bloqueo para sincronización
-		lock.readLock().lock();
-		try {
-			// Iterar sobre las entradas del log (operaciones por host)
-			for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
-				String hostId = entry.getKey();
-				CopyOnWriteArrayList<Operation> hostOperationsList = entry.getValue();
+		// Iterar sobre las entradas del log (operaciones por host)
+		for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
+			String hostId = entry.getKey();
+			CopyOnWriteArrayList<Operation> hostOperationsList = entry.getValue();
 
-				// saltar operaciones vacias
-				if (hostOperationsList.isEmpty())
-					continue;
+			// saltar operaciones vacias
+			if (hostOperationsList.isEmpty())
+				continue;
 
-				Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
-				// Filtrar y añadir solo las operaciones que el compañero no ha visto
-				for (Operation op : hostOperationsList) {
-					if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
-						newOperations.add(op);
-					}
+			Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
+			// Filtrar y añadir solo las operaciones que el compañero no ha visto
+			for (Operation op : hostOperationsList) {
+				if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
+					newOperations.add(op);
 				}
 			}
-		} finally {
-			//liberar bloqueo
-			lock.readLock().unlock();
 		}
+
 		return newOperations;
 	}
 	
@@ -140,22 +134,14 @@ public class Log implements Serializable{
 	 * equals
 	 */
 	@Override
-	public boolean equals(Object obj) {
+	public synchronized boolean equals(Object obj) {
 		// Verificar de identidad y nulidad básica
 		if (this == obj) return true;
 		if (obj == null || getClass() != obj.getClass()) return false;
 
-
 		Log other = (Log) obj;
-		// bloqueo lectura
-		lock.readLock().lock();
-		try {
-			// Comparar el mapa log de la instancia actual con el de la other
-			return this.log.equals(other.log);
-		} finally {
-			//libera bloqueo
-			lock.readLock().unlock();
-		}
+		// Comparar el mapa log de la instancia actual con el de la other
+		return this.log.equals(other.log);
 	}
 
 

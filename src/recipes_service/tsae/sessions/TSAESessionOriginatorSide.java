@@ -26,6 +26,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.TimerTask;
 import java.util.Vector;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -59,7 +60,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 	
 	private ServerData serverData;
 
-	private final Object sessionLock = new Object();
+	//private final Object sessionLock = new Object();
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TSAESessionOriginatorSide(ServerData serverData){
@@ -103,7 +104,6 @@ public class TSAESessionOriginatorSide extends TimerTask{
 		// Initialize the socket to communicate with the partner server
 		Socket socket = null;		
 
-		synchronized (sessionLock) {
 			try {
 				socket = new Socket(n.getAddress(), n.getPort());
 				ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
@@ -129,17 +129,28 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				// receive operations from partner
 				Message msg = (Message) in.readObject();
 				LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
+
+				// Acumular las operaciones en una lista en lugar de integrarlas una a una sin bloquear ServerData.
+				List<Operation> incomingOps = new ArrayList<>();
 				while (msg != null && msg.type() == MsgType.OPERATION){
-					Operation operation = ((MessageOperation) msg).getOperation();
-					// Actualización segura de las estructuras locales (usan sus propios candados internos)
-					serverData.getLog().add(operation);
-					serverData.registerOperation(operation);
-					serverData.getSummary().updateTimestamp(operation.getTimestamp());
-					serverData.getAck().update(serverData.getId(), serverData.getSummary());
 					// ...
+					Operation operation = ((MessageOperation) msg).getOperation();
+					incomingOps.add(operation);
 					msg = (Message) in.readObject();
 					LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
 				}
+
+
+				// Ahora todas las operaciones se registran de manera atómica (bloqueando serverData)
+				synchronized (serverData) {
+					for(Operation op : incomingOps) {
+						serverData.getLog().add(op);
+						serverData.registerOperation(op);
+						serverData.getSummary().updateTimestamp(op.getTimestamp());
+					}
+					serverData.getAck().update(serverData.getId(), serverData.getSummary());
+				}
+
 
 				// receive partner's summary and ack
 				if (msg != null && msg.type() == MsgType.AE_REQUEST){
@@ -147,9 +158,13 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					TimestampVector partnerSummary = ((MessageAErequest) msg).getSummary();
 					TimestampMatrix partnerAck = ((MessageAErequest) msg).getAck();
 
-					List<Operation> newOperations = serverData.getLog().listNewer(partnerSummary);
+					List<Operation> newOperations;
 
-					serverData.getAck().updateMax(partnerAck);
+					// Sincronizar al extraer las nuevas operaciones para evitar problemas.
+					synchronized(serverData) {
+						newOperations = serverData.getLog().listNewer(partnerSummary);
+						serverData.getAck().updateMax(partnerAck);
+					}
 
 					// send operations
 					if (newOperations != null) {
@@ -195,7 +210,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				}
 				//LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] End TSAE session");
 			}
-		}			
+					
 	}
 }
 
