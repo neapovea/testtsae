@@ -90,7 +90,7 @@ public class ServerData {
 	//List<Timestamp> tombstones = new Vector<Timestamp>();
 	private List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
 
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	// end: true when program should end; false otherwise
 	private boolean end;
@@ -267,27 +267,26 @@ public class ServerData {
 	}
 
 
-    public synchronized void registerOperation(Operation op) {
-		// Procesar operación a agregar
-		if (op instanceof AddOperation addOp) {
-			Recipe recipeData = addOp.getRecipe();
+	/**
+	 * Nuevo meotdo centralizado: integraa de forma segura una operación
+	 * recibida, actualizando BBDD, Log y Vector.
+	 */
 
-			// Crear nueva instancia de Recipe para asegurar la integridad local
-			Recipe newRecipe = new Recipe(
-					recipeData.getTitle(),
-					recipeData.getRecipe(),
-					recipeData.getAuthor(),
-					recipeData.getTimestamp()
-			);
+	public synchronized void integrateOperation(Operation op) {
+		boolean addedToLog = log.add(op);
 
-			recipes.add(newRecipe);
-			log.add(op); // Registrar en el log para futura propagación
-
+		// Si la operación es nueva (se añadió al log) la procesamos
+		if (addedToLog) {
+			if (op instanceof AddOperation addOp) {
+				Recipe recipeData = addOp.getRecipe();
+				Recipe newRecipe = new Recipe(recipeData.getTitle(), recipeData.getRecipe(), recipeData.getAuthor(), recipeData.getTimestamp());
+				recipes.add(newRecipe);
+			} else if (op instanceof RemoveOperation removeOp) {
+				recipes.remove(removeOp.getRecipeTitle());
+			}
+			// Actualizar vector local para reflejar que conocemos esta novedad
+			summary.updateTimestamp(op.getTimestamp());
 		}
-		// Procesar operación de eliminar
-		else if (op instanceof RemoveOperation removeOp) {
-			recipes.remove(removeOp.getRecipeTitle());
-		}
-    }
+	}
 
 }

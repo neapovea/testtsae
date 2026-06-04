@@ -52,7 +52,7 @@ public class TSAESessionPartnerSide extends Thread{
 	
 	private final Socket socket;
 	private final ServerData serverData;
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
 	public TSAESessionPartnerSide(Socket socket, ServerData serverData) {
@@ -80,9 +80,9 @@ public class TSAESessionPartnerSide extends Thread{
 			// Sincronizar bloqueando serverData
 			synchronized(serverData){
 				// Clone the local summary and update the acknowledgment matrix
-				localSummary = this.serverData.getSummary().clone();
+				localSummary = serverData.getSummary().clone();
 				serverData.getAck().update(serverData.getId(), localSummary);
-				localAck = this.serverData.getAck().clone();
+				localAck = serverData.getAck().clone();
 			}
 			
 			// receive request from originator and update local state
@@ -122,8 +122,7 @@ public class TSAESessionPartnerSide extends Thread{
 				List<Operation> incomingOps = new ArrayList<>();
 				while (msg.type() == MsgType.OPERATION){
 					// ...				
-					Operation op = ((MessageOperation) msg).getOperation(); 
-					incomingOps.add(op);
+					incomingOps.add(((MessageOperation) msg).getOperation());
 					msg = (Message) in.readObject();
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] received message: "+"\n"+ msg);
 				}
@@ -140,14 +139,13 @@ public class TSAESessionPartnerSide extends Thread{
 					synchronized(serverData){
 						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
 						for (Operation op : incomingOps) {
-							//serverData.getLog().add(op);
-							serverData.registerOperation(op);
-							//serverData.getSummary().updateTimestamp(op.getTimestamp());
+							// integrateOperation actualizar: log, BBDD y timestamp
+							serverData.integrateOperation(op);
 						}						
 						
 						serverData.getSummary().updateMax(originator.getSummary());
 						serverData.getAck().updateMax(originator.getAck());
-						//serverData.getAck().update(serverData.getId(), serverData.getSummary());
+						serverData.getAck().update(serverData.getId(), serverData.getSummary());
 
 					}
 				}

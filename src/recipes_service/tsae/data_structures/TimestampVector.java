@@ -56,21 +56,14 @@ public class TimestampVector implements Serializable{
 	 */
 	
 	private final ConcurrentHashMap<String, Timestamp> timestampVector= new ConcurrentHashMap<String, Timestamp>();
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TimestampVector (List<String> participants){
-		// bloqueo
-		lock.writeLock().lock();
-		try {
-			// create and empty TimestampVector
-			for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
-				String id = it.next();
-				// when sequence number of timestamp < 0 it means that the timestamp is the null timestamp
-				timestampVector.put(id, new Timestamp(id, Timestamp.NULL_TIMESTAMP_SEQ_NUMBER));
-			}
-		} finally {
-			// Libera bloqueo
-			lock.writeLock().unlock();
+		// create and empty TimestampVector
+		for (Iterator<String> it = participants.iterator(); it.hasNext(); ){
+			String id = it.next();
+			// when sequence number of timestamp < 0 it means that the timestamp is the null timestamp
+			timestampVector.put(id, new Timestamp(id, Timestamp.NULL_TIMESTAMP_SEQ_NUMBER));
 		}
 	}
 

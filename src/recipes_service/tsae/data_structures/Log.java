@@ -54,7 +54,7 @@ public class Log implements Serializable{
 	 * the group.
 	 */
 	private final ConcurrentHashMap<String, CopyOnWriteArrayList<Operation>> log = new ConcurrentHashMap<>();
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
 	public Log(List<String> participants){
