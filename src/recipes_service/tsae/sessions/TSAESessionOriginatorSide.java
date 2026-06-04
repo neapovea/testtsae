@@ -60,7 +60,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 	
 	private ServerData serverData;
 
-	//private final Object sessionLock = new Object();
+	private final Object sessionLock = new Object();
 	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	public TSAESessionOriginatorSide(ServerData serverData){
@@ -102,8 +102,9 @@ public class TSAESessionOriginatorSide extends TimerTask{
 		
 		LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] TSAE session");
 		// Initialize the socket to communicate with the partner server
-		Socket socket = null;		
+		Socket socket = null;
 
+		synchronized (sessionLock) {
 			try {
 				socket = new Socket(n.getAddress(), n.getPort());
 				ObjectInputStream_DS in = new ObjectInputStream_DS(socket.getInputStream());
@@ -141,14 +142,14 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				}
 
 
-				// Ahora todas las operaciones se registran de manera atómica (bloqueando serverData)
+				// Registrar operaciones de manera atómica (bloqueando serverData)
 				synchronized (serverData) {
 					for(Operation op : incomingOps) {
 						serverData.getLog().add(op);
 						serverData.registerOperation(op);
 						serverData.getSummary().updateTimestamp(op.getTimestamp());
+						serverData.getAck().update(serverData.getId(), serverData.getSummary());
 					}
-					serverData.getAck().update(serverData.getId(), serverData.getSummary());
 				}
 
 
@@ -170,7 +171,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					if (newOperations != null) {
 						for (Operation op : newOperations) {
 							MessageOperation opMsg = new MessageOperation(op);
-							//...								
+							//...
 							opMsg.setSessionNumber(current_session_number);
 							out.writeObject(opMsg);
 							LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] sentmessage: "+"\n"+ opMsg);
@@ -187,7 +188,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 					msg = (Message) in.readObject();
 					LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
 					if (msg != null && msg.type() == MsgType.END_TSAE){
-					//
+					// Actualizar información (bloqueando serverData)
 						synchronized (serverData) {
 							serverData.getSummary().updateMax(partnerSummary);
 							serverData.getAck().updateMax(partnerAck);
@@ -210,7 +211,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				}
 				//LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] End TSAE session");
 			}
-					
+		}
 	}
 }
 

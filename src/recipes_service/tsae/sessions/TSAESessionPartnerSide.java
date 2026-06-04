@@ -77,7 +77,7 @@ public class TSAESessionPartnerSide extends Thread{
 			TimestampVector localSummary;
 			TimestampMatrix localAck;
 
-
+			// Sincronizar bloqueando serverData
 			synchronized(serverData){
 				// Clone the local summary and update the acknowledgment matrix
 				localSummary = this.serverData.getSummary().clone();
@@ -140,14 +140,14 @@ public class TSAESessionPartnerSide extends Thread{
 					synchronized(serverData){
 						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
 						for (Operation op : incomingOps) {
-							serverData.getLog().add(op);
+							//serverData.getLog().add(op);
 							serverData.registerOperation(op);
-							serverData.getSummary().updateTimestamp(op.getTimestamp());
+							//serverData.getSummary().updateTimestamp(op.getTimestamp());
 						}						
 						
 						serverData.getSummary().updateMax(originator.getSummary());
 						serverData.getAck().updateMax(originator.getAck());
-						serverData.getAck().update(serverData.getId(), serverData.getSummary());
+						//serverData.getAck().update(serverData.getId(), serverData.getSummary());
 
 					}
 				}

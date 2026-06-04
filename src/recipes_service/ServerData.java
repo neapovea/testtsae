@@ -134,9 +134,9 @@ public class ServerData {
 	// ******************************
 	private Timestamp nextTimestamp(){
 		// Iniciar secuencia
-//		if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
-//			seqnum.set(-1);
-//		}
+		if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+			seqnum.set(-1);
+		}
 		// Generar nuevo timestamp con el ID del host y el incremento de la secuencia
 		return  new Timestamp(id, seqnum.incrementAndGet());
 	}
@@ -281,7 +281,7 @@ public class ServerData {
 			);
 
 			recipes.add(newRecipe);
-			//log.add(op); // Registrar en el log para futura propagación
+			log.add(op); // Registrar en el log para futura propagación
 
 		}
 		// Procesar operación de eliminar
