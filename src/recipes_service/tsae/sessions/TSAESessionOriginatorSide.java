@@ -143,7 +143,7 @@ public class TSAESessionOriginatorSide extends TimerTask{
 			synchronized (serverData) {
 				for(Operation op : incomingOps) {
 					serverData.integrateOperation(op);
-					serverData.getAck().update(serverData.getId(), serverData.getSummary());
+					//serverData.getAck().update(serverData.getId(), serverData.getSummary());
 				}
 			}
 
@@ -184,11 +184,14 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				if (msg != null && msg.type() == MsgType.END_TSAE){
 					// Actualizar información (bloqueando serverData)
 					synchronized (serverData) {
+						// Actualizar summary y acknowledgment local con datos del partner
 						serverData.getSummary().updateMax(partnerSummary);
 						serverData.getAck().updateMax(partnerAck);
 						serverData.getAck().update(serverData.getId(), serverData.getSummary());
 						// Purgar log
 						serverData.getLog().purgeLog(serverData.getAck());
+						LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: " + current_session_number + "] updated summary/ack and purge log");
+
 					}
 				}
 			} else {

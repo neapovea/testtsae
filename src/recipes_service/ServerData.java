@@ -165,7 +165,18 @@ public class ServerData {
 	}
 	
 	public synchronized void removeRecipe(String recipeTitle){
-		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
+		Recipe removedRecipe = recipes.get(recipeTitle);
+		if (removedRecipe != null) {
+			Timestamp timestamp = nextTimestamp();
+			RemoveOperation removeOps = new RemoveOperation(recipeTitle, removedRecipe.getTimestamp(), timestamp);
+			log.add(removeOps);
+			summary.updateTimestamp(timestamp);
+			tombstones.add(removedRecipe.getTimestamp());
+			recipes.remove(recipeTitle);
+			LSimLogger.log(Level.INFO, "Remove recipe: " + recipeTitle);
+		} else {
+			LSimLogger.log(Level.WARN, "Try to remove null recipe: " + recipeTitle);
+		}
 	}
 
 	private synchronized void purgeTombstones() {
@@ -282,7 +293,9 @@ public class ServerData {
 				Recipe newRecipe = new Recipe(recipeData.getTitle(), recipeData.getRecipe(), recipeData.getAuthor(), recipeData.getTimestamp());
 				recipes.add(newRecipe);
 			} else if (op instanceof RemoveOperation removeOp) {
-				recipes.remove(removeOp.getRecipeTitle());
+				//recipes.remove(removeOp.getRecipeTitle());
+				// Remove the recipe with the specified title
+				removeRecipe(removeOp.getRecipeTitle());
 			}
 			// Actualizar vector local para reflejar que conocemos esta novedad
 			summary.updateTimestamp(op.getTimestamp());
