@@ -52,7 +52,7 @@ public class TSAESessionPartnerSide extends Thread{
 	
 	private final Socket socket;
 	private final ServerData serverData;
-	//private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
 	public TSAESessionPartnerSide(Socket socket, ServerData serverData) {
@@ -74,11 +74,17 @@ public class TSAESessionPartnerSide extends Thread{
 			// receive request from originator and update local state
 			// receive originator's summary and ack
 
-			// Preparars estado y clonar de forma segura
-			serverData.prepareLocalState();
-			TimestampVector localSummary = serverData.getSummary().clone();
-			TimestampMatrix localAck = serverData.getAck().clone();
+			TimestampVector localSummary;
+			TimestampMatrix localAck;
 
+			// Sincronizar bloqueando serverData
+			synchronized(serverData){
+				// Clone the local summary and update the acknowledgment matrix
+				localSummary = serverData.getSummary().clone();
+				serverData.getAck().update(serverData.getId(), localSummary);
+				localAck = serverData.getAck().clone();
+			}
+			
 			// receive request from originator and update local state
 			// receive originator's summary and ack
 			msg = (Message) in.readObject();
@@ -89,9 +95,12 @@ public class TSAESessionPartnerSide extends Thread{
 			if (msg.type() == MsgType.AE_REQUEST){
 				// ...
 				MessageAErequest originator = (MessageAErequest) msg;
+				List<Operation> missingOps;
 
-				// Buscamos las que nos faltan por mandar
-				List<Operation> missingOps = serverData.getLog().listNewer(originator.getSummary());
+				// Sincronizar bloqueando serverData
+				synchronized(serverData) {
+					missingOps = serverData.getLog().listNewer(originator.getSummary());
+				}
 
 	            // send operations
 				for (Operation op : missingOps) {					
@@ -114,8 +123,7 @@ public class TSAESessionPartnerSide extends Thread{
 				List<Operation> incomingOps = new ArrayList<>();
 				while (msg.type() == MsgType.OPERATION){
 					// ...				
-					Operation op = ((MessageOperation) msg).getOperation(); 
-					incomingOps.add(op);
+					incomingOps.add(((MessageOperation) msg).getOperation());
 					msg = (Message) in.readObject();
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] received message: "+"\n"+ msg);
 				}
@@ -128,8 +136,19 @@ public class TSAESessionPartnerSide extends Thread{
 					out.writeObject(msg);
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+"\n"+ msg);
 
-					// El serverData lo integra todo de golpe (ops, summary y ack del originador)
-					serverData.applySessionUpdates(incomingOps, originator.getSummary(), originator.getAck());
+					// Synchronize to avoid interference between threads
+					synchronized(serverData){
+						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
+						for (Operation op : incomingOps) {
+							// integrateOperation actualiza: log, BBDD y timestamp
+							serverData.integrateOperation(op);
+						}						
+						
+						serverData.getSummary().updateMax(originator.getSummary());
+						serverData.getAck().updateMax(originator.getAck());
+						serverData.getAck().update(serverData.getId(), serverData.getSummary());
+
+					}
 				}
 			}
 			socket.close();

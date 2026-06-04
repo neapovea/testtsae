@@ -90,7 +90,7 @@ public class ServerData {
 	//List<Timestamp> tombstones = new Vector<Timestamp>();
 	private List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
 
-	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	// end: true when program should end; false otherwise
 	private boolean end;
@@ -134,9 +134,9 @@ public class ServerData {
 	// ******************************
 	private Timestamp nextTimestamp(){
 		// Iniciar secuencia
-//		if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
-//			seqnum.set(-1);
-//		}
+		if (seqnum.get() == Timestamp.NULL_TIMESTAMP_SEQ_NUMBER) {
+			seqnum.set(-1);
+		}
 		// Generar nuevo timestamp con el ID del host y el incremento de la secuencia
 		return  new Timestamp(id, seqnum.incrementAndGet());
 	}
@@ -144,57 +144,43 @@ public class ServerData {
 	// ******************************
 	// *** add and remove recipes
 	// ******************************
-	public void addRecipe(String recipeTitle, String recipe) {
+	public synchronized void addRecipe(String recipeTitle, String recipe) {
 
 		if (recipeTitle == null || recipe == null) {
 			LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
 			return;
 		}
-		// bloqueo escritura
-		lock.writeLock().lock();
-		try {		
 
-			Timestamp timestamp = nextTimestamp();
-			Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
-			Operation op = new AddOperation(rcpe, timestamp);
+		Timestamp timestamp = nextTimestamp();
+		Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
+		Operation op = new AddOperation(rcpe, timestamp);
 
-			// actualizar las estructuras de datos del servidor
-			log.add(op);                        	// Añadir al log de mensajes para propagación
-			summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
-			recipes.add(rcpe);                 		// Añadir Recipe
+		// actualizar las estructuras de datos del servidor
+		log.add(op);                        	// Añadir al log de mensajes para propagación
+		summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
+		recipes.add(rcpe);                 		// Añadir Recipe
 
-			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
-		} finally {
-			// liberar bloqueo escritura
-			lock.writeLock().unlock();
-		}
+		LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
 
 	}
 	
-	public void removeRecipe(String recipeTitle){
+	public synchronized void removeRecipe(String recipeTitle){
 		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
 	}
 
-	private void purgeTombstones() {
+	private synchronized void purgeTombstones() {
 		if (ack == null){
 			return;
 		}
-		// bloqueo escritura
-		lock.writeLock().lock();
-		try {
-			TimestampVector sum = ack.minTimestampVector();
+		TimestampVector sum = ack.minTimestampVector();
 
-			List<Timestamp> newTombstones = new Vector<Timestamp>();
-			for(int i=0; i<tombstones.size(); i++){
-				if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
-					newTombstones.add(tombstones.get(i));
-				}
+		List<Timestamp> newTombstones = new Vector<Timestamp>();
+		for(int i=0; i<tombstones.size(); i++){
+			if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
+				newTombstones.add(tombstones.get(i));
 			}
-			tombstones = newTombstones;
-		} finally {
-			// liberar bloqueo escritura
-			lock.writeLock().unlock();
 		}
+		tombstones = newTombstones;
 	}
 
 
@@ -281,76 +267,26 @@ public class ServerData {
 	}
 
 
-    public void registerOperation(Operation op) {
-		// bloqueo escritura
-		lock.writeLock().lock();
-		try {		
-			// Procesar operación a agregar
+	/**
+	 * Nuevo meotdo centralizado: integraa de forma segura una operación
+	 * recibida, actualizando BBDD, Log y Vector.
+	 */
+
+	public synchronized void integrateOperation(Operation op) {
+		boolean addedToLog = log.add(op);
+
+		// Si la operación es nueva (se añadió al log) la procesamos
+		if (addedToLog) {
 			if (op instanceof AddOperation addOp) {
 				Recipe recipeData = addOp.getRecipe();
-
-				// Crear nueva instancia de Recipe para asegurar la integridad local
-				Recipe newRecipe = new Recipe(
-						recipeData.getTitle(),
-						recipeData.getRecipe(),
-						recipeData.getAuthor(),
-						recipeData.getTimestamp()
-				);
-
+				Recipe newRecipe = new Recipe(recipeData.getTitle(), recipeData.getRecipe(), recipeData.getAuthor(), recipeData.getTimestamp());
 				recipes.add(newRecipe);
-				//log.add(op); // Registrar en el log para futura propagación
-
-			}
-			// Procesar operación de eliminar
-			else if (op instanceof RemoveOperation removeOp) {
+			} else if (op instanceof RemoveOperation removeOp) {
 				recipes.remove(removeOp.getRecipeTitle());
 			}
-		} finally {
-			// liberar bloqueo escritura
-			lock.writeLock().unlock();
-		}			
-    }
-
-
-	/**
-	 * Prepara el estado local actualizando la matriz de Ack con nuestro Summary actual.
-	 * Se usa al inicio de una sesión TSAE para tener el estado consistente antes de enviarlo.
-	 */
-	public void prepareLocalState() {
-		// bloqueo escritura
-		lock.writeLock().lock();
-		try {
-			this.ack.update(this.id, this.summary);
-		} finally {
-			// liberar bloqueo escritura
-			lock.writeLock().unlock();
+			// Actualizar vector local para reflejar que conocemos esta novedad
+			summary.updateTimestamp(op.getTimestamp());
 		}
 	}
 
-	/**
-	 * Aplicar de forma atómica todas las actualizaciones y cambios de estado recibidos durante una sesión de anti-entropía.
-	 */
-	public void applySessionUpdates(List<Operation> incomingOps, TimestampVector remoteSummary, TimestampMatrix remoteAck) {
-		// bloqueo escritura
-		lock.writeLock().lock();
-		try {
-			// 1. Integrar operaciones
-			if (incomingOps != null) {
-				for (Operation op : incomingOps) {
-					this.log.add(op);
-					this.registerOperation(op); // El RRWL permite reentrada aquí
-					this.summary.updateTimestamp(op.getTimestamp());
-				}
-			}
-			// 2. Fusionar vectores
-			if (remoteSummary != null) this.summary.updateMax(remoteSummary);
-			if (remoteAck != null) this.ack.updateMax(remoteAck);
-			
-			// 3. Confirmar que estamos al día
-			this.ack.update(this.id, this.summary);
-		} finally {
-			// liberar bloqueo escritura
-			lock.writeLock().unlock();
-		}
-	}
 }
