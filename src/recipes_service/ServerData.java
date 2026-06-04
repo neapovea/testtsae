@@ -90,7 +90,7 @@ public class ServerData {
 	//List<Timestamp> tombstones = new Vector<Timestamp>();
 	private List<Timestamp> tombstones = new CopyOnWriteArrayList<>();
 
-//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 	// end: true when program should end; false otherwise
 	private boolean end;
@@ -144,43 +144,56 @@ public class ServerData {
 	// ******************************
 	// *** add and remove recipes
 	// ******************************
-	public synchronized void addRecipe(String recipeTitle, String recipe) {
+	public void addRecipe(String recipeTitle, String recipe) {
+		lock.writeLock().lock();
+		try {
+			if (recipeTitle == null || recipe == null) {
+				LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
+				return;
+			}
 
-		if (recipeTitle == null || recipe == null) {
-			LSimLogger.log(Level.WARN, "Invalid recipe input: title or content is null.");
-			return;
+			Timestamp timestamp = nextTimestamp();
+			Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
+			Operation op = new AddOperation(rcpe, timestamp);
+
+			// actualizar las estructuras de datos del servidor
+			log.add(op);                        	// Añadir al log de mensajes para propagación
+			summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
+			recipes.add(rcpe);                 		// Añadir Recipe
+
+			LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
+		} finally {
+			lock.writeLock().unlock();
 		}
-
-		Timestamp timestamp = nextTimestamp();
-		Recipe rcpe = new Recipe(recipeTitle, recipe, id, timestamp);
-		Operation op = new AddOperation(rcpe, timestamp);
-
-		// actualizar las estructuras de datos del servidor
-		log.add(op);                        	// Añadir al log de mensajes para propagación
-		summary.updateTimestamp(timestamp); 	// Actualizar timestamp local del host
-		recipes.add(rcpe);                 		// Añadir Recipe
-
-		LSimLogger.log(Level.TRACE, "Recipe '" + recipeTitle + "' added to local storage and log.");
-
 	}
 	
-	public synchronized void removeRecipe(String recipeTitle){
-		System.err.println("Error: removeRecipe method (serverData) not yet implemented");
+	public void removeRecipe(String recipeTitle){
+		lock.writeLock().lock();
+		try {
+			System.err.println("Error: removeRecipe method (serverData) not yet implemented");
+		} finally {
+			lock.writeLock().unlock();
+		}
 	}
 
-	private synchronized void purgeTombstones() {
-		if (ack == null){
-			return;
-		}
-		TimestampVector sum = ack.minTimestampVector();
-
-		List<Timestamp> newTombstones = new Vector<Timestamp>();
-		for(int i=0; i<tombstones.size(); i++){
-			if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
-				newTombstones.add(tombstones.get(i));
+	private void purgeTombstones() {
+		lock.writeLock().lock();
+		try {
+			if (ack == null){
+				return;
 			}
+			TimestampVector sum = ack.minTimestampVector();
+
+			List<Timestamp> newTombstones = new Vector<Timestamp>();
+			for(int i=0; i<tombstones.size(); i++){
+				if (tombstones.get(i).compare(sum.getLast(tombstones.get(i).getHostid()))>0){
+					newTombstones.add(tombstones.get(i));
+				}
+			}
+			tombstones = newTombstones;
+		} finally {
+			lock.writeLock().unlock();
 		}
-		tombstones = newTombstones;
 	}
 
 
@@ -247,14 +260,19 @@ public class ServerData {
 	/**
 	 * waits until the Server is ready to receive TSAE sessions from partner servers   
 	 */
-	public synchronized void waitServerConnected(){
-		while (!SimulationData.getInstance().isConnected()){
-			try {
-				wait();
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				//			e.printStackTrace();
+	public void waitServerConnected(){
+		lock.writeLock().lock();
+		try {
+			while (!SimulationData.getInstance().isConnected()){
+				try {
+					wait();
+				} catch (InterruptedException e) {
+					// TODO Auto-generated catch block
+					//			e.printStackTrace();
+				}
 			}
+		} finally {
+			lock.writeLock().unlock();
 		}
 	}
 	
@@ -262,30 +280,46 @@ public class ServerData {
 	 * 	Once the server is connected notifies to ServerPartnerSide that it is ready
 	 *  to receive TSAE sessions from partner servers  
 	 */ 
-	public synchronized void notifyServerConnected(){
-		notifyAll();
+	public void notifyServerConnected(){
+		lock.writeLock().lock();
+		try {
+			notifyAll();
+		} finally {
+			lock.writeLock().unlock();
+		}
 	}
 
+	/**
+	 *  Nuevo método para exponer el lock a las clases de sesión
+	 */
+	public ReadWriteLock getLock() {
+		return lock;
+	}
 
 	/**
 	 * Nuevo meotdo centralizado: integraa de forma segura una operación
 	 * recibida, actualizando BBDD, Log y Vector.
 	 */
 
-	public synchronized void integrateOperation(Operation op) {
-		boolean addedToLog = log.add(op);
+	public void integrateOperation(Operation op) {
+		lock.writeLock().lock();
+		try {
+			boolean addedToLog = log.add(op);
 
-		// Si la operación es nueva (se añadió al log) la procesamos
-		if (addedToLog) {
-			if (op instanceof AddOperation addOp) {
-				Recipe recipeData = addOp.getRecipe();
-				Recipe newRecipe = new Recipe(recipeData.getTitle(), recipeData.getRecipe(), recipeData.getAuthor(), recipeData.getTimestamp());
-				recipes.add(newRecipe);
-			} else if (op instanceof RemoveOperation removeOp) {
-				recipes.remove(removeOp.getRecipeTitle());
+			// Si la operación es nueva (se añadió al log) la procesamos
+			if (addedToLog) {
+				if (op instanceof AddOperation addOp) {
+					Recipe recipeData = addOp.getRecipe();
+					Recipe newRecipe = new Recipe(recipeData.getTitle(), recipeData.getRecipe(), recipeData.getAuthor(), recipeData.getTimestamp());
+					recipes.add(newRecipe);
+				} else if (op instanceof RemoveOperation removeOp) {
+					recipes.remove(removeOp.getRecipeTitle());
+				}
+				// Actualizar vector local para reflejar que conocemos esta novedad
+				summary.updateTimestamp(op.getTimestamp());
 			}
-			// Actualizar vector local para reflejar que conocemos esta novedad
-			summary.updateTimestamp(op.getTimestamp());
+		} finally {
+			lock.writeLock().unlock();
 		}
 	}
 

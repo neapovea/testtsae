@@ -78,13 +78,16 @@ public class TSAESessionPartnerSide extends Thread{
 			TimestampMatrix localAck;
 
 			// Sincronizar bloqueando serverData
-			synchronized(serverData){
+			serverData.getLock().writeLock().lock();
+			try {
 				// Clone the local summary and update the acknowledgment matrix
 				localSummary = serverData.getSummary().clone();
 				serverData.getAck().update(serverData.getId(), localSummary);
 				localAck = serverData.getAck().clone();
+			} finally {
+				serverData.getLock().writeLock().unlock();
 			}
-			
+
 			// receive request from originator and update local state
 			// receive originator's summary and ack
 			msg = (Message) in.readObject();
@@ -98,8 +101,11 @@ public class TSAESessionPartnerSide extends Thread{
 				List<Operation> missingOps;
 
 				// Sincronizar bloqueando serverData
-				synchronized(serverData) {
+				serverData.getLock().writeLock().lock();
+				try {
 					missingOps = serverData.getLog().listNewer(originator.getSummary());
+				} finally {
+					serverData.getLock().writeLock().unlock();
 				}
 
 	            // send operations
@@ -137,17 +143,19 @@ public class TSAESessionPartnerSide extends Thread{
 					LSimLogger.log(Level.TRACE, "[TSAESessionPartnerSide] [session: "+current_session_number+"] sent message: "+"\n"+ msg);
 
 					// Synchronize to avoid interference between threads
-					synchronized(serverData){
+					serverData.getLock().writeLock().lock();
+					try {
 						// Al igual que el Originator, el Partner también necesita registrar en log y actualizar timestamps de los ops recibidos.
 						for (Operation op : incomingOps) {
 							// integrateOperation actualiza: log, BBDD y timestamp
 							serverData.integrateOperation(op);
-						}						
-						
+						}
+
 						serverData.getSummary().updateMax(originator.getSummary());
 						serverData.getAck().updateMax(originator.getAck());
 						serverData.getAck().update(serverData.getId(), serverData.getSummary());
-
+					} finally {
+						serverData.getLock().writeLock().unlock();
 					}
 				}
 			}

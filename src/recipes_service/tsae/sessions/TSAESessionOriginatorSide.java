@@ -113,11 +113,15 @@ public class TSAESessionOriginatorSide extends TimerTask{
 			TimestampMatrix localAck = null;
 
 			// Clone the local summary and update the local acknowledgment matrix
-			synchronized (serverData) {
+			serverData.getLock().writeLock().lock();
+			try {
 				localSummary = this.serverData.getSummary().clone();
 				serverData.getAck().update(serverData.getId(), localSummary);
 				localAck = this.serverData.getAck().clone();
+			} finally {
+				serverData.getLock().writeLock().unlock();
 			}
+
 
 			// Send to partner: local's summary and ack
 			MessageAErequest requestMsg = new MessageAErequest(localSummary, localAck);
@@ -140,11 +144,14 @@ public class TSAESessionOriginatorSide extends TimerTask{
 			}
 
 			// Registrar operaciones de manera atómica (bloqueando serverData)
-			synchronized (serverData) {
+			serverData.getLock().writeLock().lock();
+			try {
 				for(Operation op : incomingOps) {
 					serverData.integrateOperation(op);
 					serverData.getAck().update(serverData.getId(), serverData.getSummary());
 				}
+			} finally {
+				serverData.getLock().writeLock().unlock();
 			}
 
 			// receive partner's summary and ack
@@ -156,9 +163,12 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				List<Operation> newOperations;
 
 				// Sincronizar al extraer las nuevas operaciones para evitar problemas.
-				synchronized(serverData) {
+				serverData.getLock().writeLock().lock();
+				try {
 					newOperations = serverData.getLog().listNewer(partnerSummary);
 					serverData.getAck().updateMax(partnerAck);
+				} finally {
+					serverData.getLock().writeLock().unlock();
 				}
 
 				// send operations
@@ -183,10 +193,13 @@ public class TSAESessionOriginatorSide extends TimerTask{
 				LSimLogger.log(Level.TRACE, "[TSAESessionOriginatorSide] [session: "+current_session_number+"] receivedmessage: "+"\n"+ msg);
 				if (msg != null && msg.type() == MsgType.END_TSAE){
 					// Actualizar información (bloqueando serverData)
-					synchronized (serverData) {
+					serverData.getLock().writeLock().lock();
+					try {
 						serverData.getSummary().updateMax(partnerSummary);
 						serverData.getAck().updateMax(partnerAck);
 						serverData.getAck().update(serverData.getId(), serverData.getSummary());
+					} finally {
+						serverData.getLock().writeLock().unlock();
 					}
 				}
 			} else {

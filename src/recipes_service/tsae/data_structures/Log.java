@@ -54,7 +54,7 @@ public class Log implements Serializable{
 	 * the group.
 	 */
 	private final ConcurrentHashMap<String, CopyOnWriteArrayList<Operation>> log = new ConcurrentHashMap<>();
-//	private final ReadWriteLock lock = new ReentrantReadWriteLock();
+	private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
 
 	public Log(List<String> participants){
@@ -75,19 +75,24 @@ public class Log implements Serializable{
 	 */
 
 
-	public synchronized boolean add(Operation op){
-		// Recuperar el ID del host
-		String hostId = op.getTimestamp().getHostid();
-		// Recuperar el log del host
-		// Obtener o inicializar la lista de operaciones para este host
-		CopyOnWriteArrayList<Operation> operationsList = log.computeIfAbsent(hostId, key -> new CopyOnWriteArrayList<>());
+	public  boolean add(Operation op){
+		lock.writeLock().lock();
+		try {
+			// Recuperar el ID del host
+			String hostId = op.getTimestamp().getHostid();
+			// Recuperar el log del host
+			// Obtener o inicializar la lista de operaciones para este host
+			CopyOnWriteArrayList<Operation> operationsList = log.computeIfAbsent(hostId, key -> new CopyOnWriteArrayList<>());
 
-		// Comparar si esta vacia o tiempo actual con la última entrada son iguales
-		if (operationsList.isEmpty() || operationsList.get(operationsList.size() - 1).getTimestamp().compare(op.getTimestamp()) < 0) {
-			operationsList.add(op);
-			return true;
+			// Comparar si esta vacia o tiempo actual con la última entrada son iguales
+			if (operationsList.isEmpty() || operationsList.get(operationsList.size() - 1).getTimestamp().compare(op.getTimestamp()) < 0) {
+				operationsList.add(op);
+				return true;
+			}
+			return false;
+		} finally {
+			lock.writeLock().unlock();
 		}
-		return false;
 	}
 
 
@@ -96,27 +101,32 @@ public class Log implements Serializable{
 	 * @param sum The sum of timestamps to compare against.
 	 * @return A list of operations that are newer than the given sum of timestamps.
 	 */
-	public synchronized List<Operation> listNewer(TimestampVector partnerSummary) {
-		List<Operation> newOperations = new ArrayList<>();
-		// Iterar sobre las entradas del log (operaciones por host)
-		for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
-			String hostId = entry.getKey();
-			CopyOnWriteArrayList<Operation> hostOperationsList = entry.getValue();
+	public  List<Operation> listNewer(TimestampVector partnerSummary) {
+		lock.readLock().lock();
+		try {
+			List<Operation> newOperations = new ArrayList<>();
+			// Iterar sobre las entradas del log (operaciones por host)
+			for (Map.Entry<String, CopyOnWriteArrayList<Operation>> entry : log.entrySet()) {
+				String hostId = entry.getKey();
+				CopyOnWriteArrayList<Operation> hostOperationsList = entry.getValue();
 
-			// saltar operaciones vacias
-			if (hostOperationsList.isEmpty())
-				continue;
+				// saltar operaciones vacias
+				if (hostOperationsList.isEmpty())
+					continue;
 
-			Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
-			// Filtrar y añadir solo las operaciones que el compañero no ha visto
-			for (Operation op : hostOperationsList) {
-				if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
-					newOperations.add(op);
+				Timestamp lastSeenByPartner = partnerSummary.getLast(hostId);
+				// Filtrar y añadir solo las operaciones que el compañero no ha visto
+				for (Operation op : hostOperationsList) {
+					if (op.getTimestamp().compare(lastSeenByPartner) > 0) {
+						newOperations.add(op);
+					}
 				}
 			}
-		}
 
-		return newOperations;
+			return newOperations;
+		} finally {
+			lock.readLock().unlock();
+		}
 	}
 	
 	/**
@@ -134,14 +144,19 @@ public class Log implements Serializable{
 	 * equals
 	 */
 	@Override
-	public synchronized boolean equals(Object obj) {
-		// Verificar de identidad y nulidad básica
-		if (this == obj) return true;
-		if (obj == null || getClass() != obj.getClass()) return false;
+	public boolean equals(Object obj) {
+		lock.readLock().lock();
+		try {
+			// Verificar de identidad y nulidad básica
+			if (this == obj) return true;
+			if (obj == null || getClass() != obj.getClass()) return false;
 
-		Log other = (Log) obj;
-		// Comparar el mapa log de la instancia actual con el de la other
-		return this.log.equals(other.log);
+			Log other = (Log) obj;
+			// Comparar el mapa log de la instancia actual con el de la other
+			return this.log.equals(other.log);
+		} finally {
+			lock.readLock().unlock();
+		}
 	}
 
 
@@ -150,17 +165,22 @@ public class Log implements Serializable{
 	 * toString
 	 */
 	@Override
-	public synchronized String toString() {
-			String name="";
-			for(Enumeration<CopyOnWriteArrayList<Operation>> en = log.elements();
-				en.hasMoreElements(); ){
-				List<Operation> sublog=en.nextElement();
-				for(ListIterator<Operation> en2=sublog.listIterator(); en2.hasNext();){
-					name+=en2.next().toString()+"\n";
+	public String toString() {
+			lock.readLock().lock();
+			try {
+				String name="";
+				for(Enumeration<CopyOnWriteArrayList<Operation>> en = log.elements();
+					en.hasMoreElements(); ){
+					List<Operation> sublog=en.nextElement();
+					for(ListIterator<Operation> en2=sublog.listIterator(); en2.hasNext();){
+						name+=en2.next().toString()+"\n";
+					}
 				}
-			}
 
-			return name;
+				return name;
+			} finally {
+				lock.readLock().unlock();
+			}
 	}
 
 
