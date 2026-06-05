@@ -84,3 +84,13 @@ echo "-*---------------------------------------Ejecución finalizada."
 
 # vuelvo a main
 git checkout main
+
+
+
+
+
+#sudo docker run --rm   -v "$(pwd)":/app   --user $(id -u):$(id -g) -e OPCION_FASE="2" -e CANTIDAD_NODOS="15" -e TZ="Europe/Madrid" compilador-java17
+#sudo docker run --rm   -v "$(pwd)":/app   --user $(id -u):$(id -g) -e OPCION_FASE="3" -e CANTIDAD_NODOS="15" -e TZ="Europe/Madrid" compilador-java17
+#sudo docker run --rm   -v "$(pwd)":/app   --user $(id -u):$(id -g) -e OPCION_FASE="4" -e CANTIDAD_NODOS="15" -e TZ="Europe/Madrid" compilador-java17
+#
+#
