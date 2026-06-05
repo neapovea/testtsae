@@ -82,3 +82,5 @@ date
 ls  -lh bin/recipes_service/ServerData.class bin/recipes_service/tsae/data_structures/* bin/recipes_service/tsae/sessions/*  scripts/Results*; cat scripts/Results 
 echo "-*---------------------------------------Ejecución finalizada."
 
+# vuelvo a rama main
+git checkout main
